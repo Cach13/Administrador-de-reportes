@@ -1,0 +1,190 @@
+# ========================================
+# TRANSPORT MANAGEMENT SYSTEM - .htaccess
+# ========================================
+
+# Habilitar rewrite engine
+RewriteEngine On
+
+# ========================================
+# SEGURIDAD
+# ========================================
+
+# Prevenir acceso a archivos sensibles
+<FilesMatch "\.(sql|log|ini|conf|bak|backup|old|orig|save|swp|tmp)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Proteger archivos de configuración
+<Files "config.php">
+    Order allow,deny
+    Deny from all
+</Files>
+
+<Files "database.php">
+    Order allow,deny
+    Deny from all
+</Files>
+
+<Files "composer.json">
+    Order allow,deny
+    Deny from all
+</Files>
+
+<Files "composer.lock">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Proteger directorio de logs
+<Directory "logs">
+    Order allow,deny
+    Deny from all
+</Directory>
+
+# Prevenir listado de directorios
+Options -Indexes
+
+# Ocultar información del servidor
+ServerSignature Off
+
+# ========================================
+# HEADERS DE SEGURIDAD
+# ========================================
+
+<IfModule mod_headers.c>
+    # Prevenir XSS
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # HTTPS
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    
+    # CSP básico
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com; img-src 'self' data:; font-src 'self' cdnjs.cloudflare.com"
+    
+    # Referrer Policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# ========================================
+# OPTIMIZACIÓN
+# ========================================
+
+# Compresión GZIP
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Cache de archivos estáticos
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType image/png "access plus 1 month"
+    ExpiresByType image/jpg "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 month"
+    ExpiresByType image/gif "access plus 1 month"
+    ExpiresByType image/ico "access plus 1 month"
+    ExpiresByType image/icon "access plus 1 month"
+    ExpiresByType text/ico "access plus 1 month"
+    ExpiresByType application/ico "access plus 1 month"
+</IfModule>
+
+# ========================================
+# LÍMITES DE SUBIDA
+# ========================================
+
+# Configurar límites de PHP
+php_value upload_max_filesize 10M
+php_value post_max_size 12M
+php_value max_execution_time 300
+php_value max_input_time 300
+php_value memory_limit 256M
+
+# ========================================
+# REDIRECTS Y REWRITES
+# ========================================
+
+# Forzar HTTPS (descomenta si tienes SSL)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Remover www (opcional)
+# RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+# RewriteRule ^(.*)$ http://%1/$1 [R=301,L]
+
+# Página principal
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^$ index.php [L]
+
+# ========================================
+# MANEJO DE ERRORES
+# ========================================
+
+# Páginas de error personalizadas
+ErrorDocument 403 /error.php?code=403
+ErrorDocument 404 /error.php?code=404
+ErrorDocument 500 /error.php?code=500
+
+# ========================================
+# CONFIGURACIÓN DE SESIONES
+# ========================================
+
+php_value session.cookie_httponly 1
+php_value session.cookie_secure 1
+php_value session.use_only_cookies 1
+php_value session.cookie_samesite Strict
+
+# ========================================
+# PREVENIR HOTLINKING
+# ========================================
+
+RewriteCond %{HTTP_REFERER} !^$
+RewriteCond %{HTTP_REFERER} !^https?://(www\.)?yourdomain\.com [NC]
+RewriteRule \.(jpg|jpeg|png|gif|pdf)$ - [F]
+
+# ========================================
+# RATE LIMITING BÁSICO
+# ========================================
+
+<IfModule mod_evasive24.c>
+    DOSHashTableSize    2048
+    DOSPageCount        2
+    DOSSiteCount        50
+    DOSPageInterval     1
+    DOSSiteInterval     1
+    DOSBlockingPeriod   600
+</IfModule>
+
+# ========================================
+# PREVENIR ACCESO A DIRECTORIOS ESPECÍFICOS
+# ========================================
+
+# Proteger vendor si usas Composer
+<Directory "vendor">
+    Order allow,deny
+    Deny from all
+</Directory>
+
+# Proteger archivos de clases
+RewriteRule ^classes/.*$ - [F,L]
+
+# Proteger includes
+RewriteRule ^includes/.*$ - [F,L]
+
+# Proteger config
+RewriteRule ^config/.*$ - [F,L]
+
+# ========================================
+# MIME TYPES ADICIONALES
+# ========================================
+
+<IfModule mod_mime.c>
+    AddType application/font-woff2 .woff2
+    AddType application/x-font-ttf .ttf
+    AddType application/vnd.ms-fontobject .eot
+    AddType font/opentype .otf
+</IfModule>
