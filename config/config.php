@@ -1,6 +1,6 @@
 <?php
 // ========================================
-// config/config.php - Configuración Principal
+// config/config.php - Configuración Principal CORREGIDA
 // ========================================
 
 // Configuración de errores
@@ -38,7 +38,7 @@ if (!is_dir(REPORTS_PATH)) {
 
 // Configuración de archivos
 define('MAX_UPLOAD_SIZE', 10 * 1024 * 1024); // 10MB
-define('ALLOWED_FILE_TYPES', ['pdf']);
+define('ALLOWED_FILE_TYPES', ['pdf', 'xlsx', 'xls']);
 
 // Configuración de seguridad
 define('BCRYPT_COST', 10);
@@ -54,36 +54,7 @@ define('DB_PASS', '');
 define('DB_CHARSET', 'utf8mb4');
 
 // ========================================
-// config/database.php - Configuración de Base de Datos
-// ========================================
-
-// Incluir la clase Database si existe, sino usar conexión directa
-if (file_exists(__DIR__ . '/../classes/Database.php')) {
-    require_once __DIR__ . '/../classes/Database.php';
-    
-    try {
-        $database = Database::getInstance();
-        $pdo = $database->getConnection();
-    } catch (Exception $e) {
-        die("Error de conexión: " . $e->getMessage());
-    }
-} else {
-    // Conexión directa como fallback
-    try {
-        $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-        $pdo = new PDO($dsn, DB_USER, DB_PASS, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-            PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES " . DB_CHARSET . " COLLATE " . DB_CHARSET . "_unicode_ci"
-        ]);
-    } catch (PDOException $e) {
-        die("Error de conexión: " . $e->getMessage());
-    }
-}
-
-// ========================================
-// config/auth.php - Configuración de Autenticación
+// CONFIGURACIÓN DE AUTENTICACIÓN
 // ========================================
 
 // Configuración de roles
@@ -113,33 +84,8 @@ define('PERMISSIONS', [
     ]
 ]);
 
-// Funciones de verificación de permisos
-function hasPermission($permission) {
-    if (!isset($_SESSION['role'])) {
-        return false;
-    }
-    
-    $userPermissions = PERMISSIONS[$_SESSION['role']] ?? [];
-    return in_array($permission, $userPermissions);
-}
-
-function requirePermission($permission) {
-    if (!hasPermission($permission)) {
-        header('HTTP/1.1 403 Forbidden');
-        die('Acceso denegado: No tienes permisos para realizar esta acción.');
-    }
-}
-
-function isAdmin() {
-    return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
-}
-
-function isOperator() {
-    return isset($_SESSION['role']) && $_SESSION['role'] === 'operator';
-}
-
 // ========================================
-// config/constants.php - Constantes del Sistema
+// CONSTANTES DEL SISTEMA
 // ========================================
 
 // Estados de vouchers
@@ -201,4 +147,258 @@ define('NOTIFICATION_TYPES', [
     'warning' => 'warning',
     'info' => 'info'
 ]);
+
+// ========================================
+// CONFIGURACIONES ESPECÍFICAS PARA ARCHIVOS
+// ========================================
+
+// Tipos MIME permitidos
+define('ALLOWED_MIME_TYPES', [
+    'pdf' => ['application/pdf'],
+    'excel' => [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-excel' // .xls
+    ]
+]);
+
+// Tamaños máximos por tipo
+define('MAX_FILE_SIZES', [
+    'pdf' => 20 * 1024 * 1024,  // 20MB para PDF
+    'excel' => 10 * 1024 * 1024  // 10MB para Excel
+]);
+
+// Configuración de procesamiento
+define('PROCESSING_CONFIG', [
+    'pdf' => [
+        'extraction_method' => 'auto', // auto, text, ocr
+        'min_confidence' => 0.7,
+        'ocr_language' => 'spa'
+    ],
+    'excel' => [
+        'header_row' => 1,
+        'skip_empty_rows' => true,
+        'date_format' => 'auto'
+    ]
+]);
+
+// ========================================
+// FUNCIONES DE UTILIDAD - DECLARAR SOLO UNA VEZ
+// ========================================
+
+/**
+ * Verificar permisos del usuario
+ */
+if (!function_exists('hasPermission')) {
+    function hasPermission($permission) {
+        if (!isset($_SESSION['role'])) {
+            return false;
+        }
+        
+        $userPermissions = PERMISSIONS[$_SESSION['role']] ?? [];
+        return in_array($permission, $userPermissions);
+    }
+}
+
+/**
+ * Requerir permiso específico
+ */
+if (!function_exists('requirePermission')) {
+    function requirePermission($permission) {
+        if (!hasPermission($permission)) {
+            header('HTTP/1.1 403 Forbidden');
+            die('Acceso denegado: No tienes permisos para realizar esta acción.');
+        }
+    }
+}
+
+/**
+ * Verificar si es admin
+ */
+if (!function_exists('isAdmin')) {
+    function isAdmin() {
+        return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
+    }
+}
+
+/**
+ * Verificar si es operador
+ */
+if (!function_exists('isOperator')) {
+    function isOperator() {
+        return isset($_SESSION['role']) && $_SESSION['role'] === 'operator';
+    }
+}
+
+/**
+ * Formatear fecha
+ */
+if (!function_exists('formatDate')) {
+    function formatDate($date, $format = DATE_FORMAT) {
+        if (empty($date)) return '-';
+        return date($format, strtotime($date));
+    }
+}
+
+/**
+ * Formatear moneda
+ */
+if (!function_exists('formatCurrency')) {
+    function formatCurrency($amount, $currency = DEFAULT_CURRENCY) {
+        return CURRENCY_SYMBOL . number_format($amount, 2);
+    }
+}
+
+/**
+ * Sanitizar entrada
+ */
+if (!function_exists('sanitizeInput')) {
+    function sanitizeInput($input) {
+        return htmlspecialchars(strip_tags(trim($input)), ENT_QUOTES, 'UTF-8');
+    }
+}
+
+/**
+ * Formatear tamaño de archivo
+ */
+if (!function_exists('formatFileSize')) {
+    function formatFileSize($bytes) {
+        if ($bytes === 0) return '0 Bytes';
+        
+        $k = 1024;
+        $sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        $i = floor(log($bytes) / log($k));
+        
+        return round($bytes / pow($k, $i), 2) . ' ' . $sizes[$i];
+    }
+}
+
+/**
+ * Obtener configuración de tipo de archivo
+ */
+if (!function_exists('getFileTypeConfig')) {
+    function getFileTypeConfig($fileType) {
+        return PROCESSING_CONFIG[$fileType] ?? [];
+    }
+}
+
+/**
+ * Verificar si el tipo de archivo es permitido
+ */
+if (!function_exists('isAllowedFileType')) {
+    function isAllowedFileType($mimeType) {
+        foreach (ALLOWED_MIME_TYPES as $types) {
+            if (in_array($mimeType, $types)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+/**
+ * Obtener tipo de archivo por MIME type
+ */
+if (!function_exists('getFileTypeByMime')) {
+    function getFileTypeByMime($mimeType) {
+        foreach (ALLOWED_MIME_TYPES as $type => $mimes) {
+            if (in_array($mimeType, $mimes)) {
+                return $type;
+            }
+        }
+        return false;
+    }
+}
+
+/**
+ * Generar nombre único para archivo
+ */
+if (!function_exists('generateUniqueFileName')) {
+    function generateUniqueFileName($originalName, $type) {
+        $extension = pathinfo($originalName, PATHINFO_EXTENSION);
+        $baseName = pathinfo($originalName, PATHINFO_FILENAME);
+        $timestamp = date('Y-m-d_H-i-s');
+        $random = substr(md5(uniqid()), 0, 8);
+        
+        return "{$type}_{$timestamp}_{$random}_{$baseName}.{$extension}";
+    }
+}
+
+/**
+ * Validar archivo subido
+ */
+if (!function_exists('validateUploadedFile')) {
+    function validateUploadedFile($file) {
+        $errors = [];
+        
+        // Verificar que no hay errores de upload
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $errors[] = 'Error en la subida del archivo';
+            return $errors;
+        }
+        
+        // Verificar tamaño
+        if ($file['size'] > MAX_UPLOAD_SIZE) {
+            $errors[] = 'El archivo excede el tamaño máximo permitido';
+        }
+        
+        // Verificar tipo MIME
+        if (!isAllowedFileType($file['type'])) {
+            $errors[] = 'Tipo de archivo no permitido';
+        }
+        
+        // Verificar que el archivo existe
+        if (!is_uploaded_file($file['tmp_name'])) {
+            $errors[] = 'Archivo inválido';
+        }
+        
+        return $errors;
+    }
+}
+
+/**
+ * Enviar respuesta JSON
+ */
+if (!function_exists('sendJsonResponse')) {
+    function sendJsonResponse($data, $statusCode = 200) {
+        http_response_code($statusCode);
+        header('Content-Type: application/json');
+        echo json_encode($data, JSON_UNESCAPED_UNICODE);
+        exit();
+    }
+}
+
+/**
+ * Enviar respuesta de éxito
+ */
+if (!function_exists('sendSuccessResponse')) {
+    function sendSuccessResponse($message, $data = []) {
+        sendJsonResponse([
+            'success' => true,
+            'message' => $message,
+            'data' => $data
+        ]);
+    }
+}
+
+/**
+ * Enviar respuesta de error
+ */
+if (!function_exists('sendErrorResponse')) {
+    function sendErrorResponse($message, $errors = [], $statusCode = 400) {
+        sendJsonResponse([
+            'success' => false,
+            'message' => $message,
+            'errors' => $errors
+        ], $statusCode);
+    }
+}
+
+/**
+ * Función helper para escape HTML
+ */
+if (!function_exists('e')) {
+    function e($string) {
+        return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
+    }
+}
 ?>

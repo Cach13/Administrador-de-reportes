@@ -1,5 +1,6 @@
 -- ========================================
--- TRANSPORT MANAGEMENT SYSTEM - DATABASE
+-- TRANSPORT MANAGEMENT SYSTEM - DATABASE ACTUALIZADA
+-- Soporte para PDF + Excel
 -- ========================================
 
 DROP DATABASE IF EXISTS transport_management;
@@ -40,7 +41,7 @@ CREATE TABLE companies (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(150) NOT NULL,
     legal_name VARCHAR(200) NULL,
-    tax_id VARCHAR(50) UNIQUE NULL, -- RFC o NIT
+    tax_id VARCHAR(50) UNIQUE NULL,
     contact_person VARCHAR(100) NULL,
     phone VARCHAR(20) NULL,
     email VARCHAR(100) NULL,
@@ -72,7 +73,7 @@ CREATE TABLE companies (
 );
 
 -- ========================================
--- 3. TABLA DE VOUCHERS (PDFs SUBIDOS)
+-- 3. TABLA DE VOUCHERS ACTUALIZADA (PDF + EXCEL)
 -- ========================================
 
 CREATE TABLE vouchers (
@@ -80,7 +81,13 @@ CREATE TABLE vouchers (
     voucher_number VARCHAR(100) NOT NULL,
     original_filename VARCHAR(255) NOT NULL,
     file_path VARCHAR(500) NOT NULL,
-    file_size INT NOT NULL, -- en bytes
+    file_size INT NOT NULL,
+    
+    -- 🆕 SOPORTE MULTI-FORMATO
+    file_type ENUM('pdf', 'excel') NOT NULL,
+    file_format VARCHAR(10) NULL,                   -- .pdf, .xlsx, .xls
+    mime_type VARCHAR(100) NULL,                    -- application/pdf, application/vnd.openxmlformats...
+    
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     period_start DATE NULL,
     period_end DATE NULL,
@@ -88,6 +95,16 @@ CREATE TABLE vouchers (
     -- Estado del procesamiento
     status ENUM('uploaded', 'processing', 'processed', 'error') DEFAULT 'uploaded',
     processing_notes TEXT NULL,
+    
+    -- 🆕 METADATOS DE PROCESAMIENTO
+    extraction_method VARCHAR(50) NULL,            -- 'pdf_text', 'pdf_ocr', 'excel_direct', 'excel_csv'
+    data_quality_score DECIMAL(3,2) NULL,         -- 0.00 - 1.00 (calidad de extracción)
+    processing_time_seconds INT NULL,              -- Tiempo que tardó en procesar
+    
+    -- 🆕 ESTADÍSTICAS DE CONTENIDO
+    total_rows_detected INT DEFAULT 0,             -- Filas detectadas en archivo original
+    total_rows_valid INT DEFAULT 0,                -- Filas válidas después de validación
+    total_rows_errors INT DEFAULT 0,               -- Filas con errores
     
     -- Totales generales del voucher
     total_amount DECIMAL(12,2) DEFAULT 0.00,
@@ -101,6 +118,10 @@ CREATE TABLE vouchers (
     FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE RESTRICT,
     FOREIGN KEY (processed_by) REFERENCES users(id) ON DELETE SET NULL,
     
+    -- 🆕 ÍNDICES PARA BÚSQUEDAS POR TIPO
+    INDEX idx_file_type (file_type),
+    INDEX idx_file_format (file_format),
+    INDEX idx_extraction_method (extraction_method),
     INDEX idx_voucher_number (voucher_number),
     INDEX idx_status (status),
     INDEX idx_upload_date (upload_date),
@@ -108,13 +129,62 @@ CREATE TABLE vouchers (
 );
 
 -- ========================================
--- 4. TABLA DE VIAJES EXTRAÍDOS
+-- 4. 🆕 TABLA DE LOGS DE PROCESAMIENTO
+-- ========================================
+
+CREATE TABLE file_processing_logs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    voucher_id INT NOT NULL,
+    processing_step VARCHAR(100) NOT NULL,         -- 'upload', 'validation', 'extraction', 'normalization'
+    step_status ENUM('started', 'completed', 'failed', 'warning') NOT NULL,
+    step_details JSON NULL,                        -- Detalles específicos del paso
+    processing_time_ms INT NULL,                   -- Tiempo de procesamiento en milisegundos
+    memory_usage_mb DECIMAL(8,2) NULL,            -- Memoria utilizada
+    rows_processed INT NULL,                       -- Filas procesadas en este paso
+    error_message TEXT NULL,
+    error_code VARCHAR(50) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+    INDEX idx_voucher_step (voucher_id, processing_step),
+    INDEX idx_step_status (processing_step, step_status),
+    INDEX idx_created_at (created_at)
+);
+
+-- ========================================
+-- 5. 🆕 TABLA DE ERRORES DE DATOS
+-- ========================================
+
+CREATE TABLE data_validation_errors (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    voucher_id INT NOT NULL,
+    row_number INT NOT NULL,                       -- Fila en archivo original
+    field_name VARCHAR(100) NOT NULL,              -- Campo con error
+    original_value TEXT NULL,                      -- Valor original
+    error_type VARCHAR(50) NOT NULL,               -- 'missing', 'invalid_format', 'out_of_range'
+    error_message VARCHAR(255) NOT NULL,
+    severity ENUM('error', 'warning') DEFAULT 'error',
+    is_resolved BOOLEAN DEFAULT FALSE,
+    resolution_notes TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+    INDEX idx_voucher_errors (voucher_id, error_type),
+    INDEX idx_severity (severity, is_resolved)
+);
+
+-- ========================================
+-- 6. TABLA DE VIAJES EXTRAÍDOS (ACTUALIZADA)
 -- ========================================
 
 CREATE TABLE trips (
     id INT PRIMARY KEY AUTO_INCREMENT,
     voucher_id INT NOT NULL,
     company_id INT NOT NULL,
+    
+    -- 🆕 METADATOS DE ORIGEN
+    source_row_number INT NULL,                    -- Fila en archivo original
+    source_data_quality DECIMAL(3,2) DEFAULT 1.00, -- Calidad de este registro específico
     
     -- Información del viaje
     trip_date DATE NOT NULL,
@@ -127,8 +197,14 @@ CREATE TABLE trips (
     product_type VARCHAR(100) NULL,
     weight_tons DECIMAL(8,2) NOT NULL DEFAULT 0.00,
     
+    -- 🆕 DATOS ADICIONALES DE EXCEL
+    route_code VARCHAR(50) NULL,                   -- Código de ruta (común en Excel)
+    trip_number VARCHAR(50) NULL,                  -- Número de viaje
+    load_time TIME NULL,                           -- Hora de carga
+    unload_time TIME NULL,                         -- Hora de descarga
+    
     -- Información financiera
-    unit_rate DECIMAL(10,2) NOT NULL DEFAULT 0.00, -- tarifa por tonelada
+    unit_rate DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     subtotal DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     
     -- Deducciones aplicadas
@@ -142,6 +218,12 @@ CREATE TABLE trips (
     -- Referencia del ticket/documento
     ticket_number VARCHAR(100) NULL,
     
+    -- 🆕 CAMPOS DE AUDITORÍA
+    data_source_type ENUM('pdf', 'excel') NOT NULL,
+    extraction_confidence DECIMAL(3,2) DEFAULT 1.00, -- Confianza en la extracción (0.00-1.00)
+    manual_review_required BOOLEAN DEFAULT FALSE,
+    manual_review_notes TEXT NULL,
+    
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
@@ -150,11 +232,14 @@ CREATE TABLE trips (
     INDEX idx_voucher_company (voucher_id, company_id),
     INDEX idx_trip_date (trip_date),
     INDEX idx_vehicle (vehicle_plate),
-    INDEX idx_ticket (ticket_number)
+    INDEX idx_ticket (ticket_number),
+    INDEX idx_data_source (data_source_type),        -- 🆕
+    INDEX idx_review_required (manual_review_required), -- 🆕
+    INDEX idx_source_row (voucher_id, source_row_number) -- 🆕
 );
 
 -- ========================================
--- 5. TABLA DE REPORTES GENERADOS (HISTORIAL INDEFINIDO)
+-- 7. TABLA DE REPORTES GENERADOS
 -- ========================================
 
 CREATE TABLE reports (
@@ -162,48 +247,43 @@ CREATE TABLE reports (
     voucher_id INT NOT NULL,
     company_id INT NOT NULL,
     
-    -- Información del reporte (para búsquedas rápidas)
     report_number VARCHAR(100) NOT NULL,
     report_title VARCHAR(200) NOT NULL,
     generation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    -- Período del reporte (campos clave para búsquedas)
     period_start DATE NOT NULL,
     period_end DATE NOT NULL,
-    report_year YEAR AS (YEAR(period_start)) STORED, -- Campo calculado para búsquedas anuales
-    report_month TINYINT AS (MONTH(period_start)) STORED, -- Campo calculado para búsquedas mensuales
+    report_year YEAR AS (YEAR(period_start)) STORED,
+    report_month TINYINT AS (MONTH(period_start)) STORED,
     
-    -- Información de la empresa (desnormalizada para búsquedas rápidas)
-    company_name VARCHAR(150) NOT NULL, -- Copiado de companies.name al generar
-    company_tax_id VARCHAR(50) NULL, -- Copiado de companies.tax_id al generar
+    company_name VARCHAR(150) NOT NULL,
+    company_tax_id VARCHAR(50) NULL,
     
-    -- Archivo generado (NUNCA se elimina)
     file_path VARCHAR(500) NOT NULL,
     file_size INT NOT NULL,
-    file_hash VARCHAR(64) NULL, -- SHA256 para verificar integridad
+    file_hash VARCHAR(64) NULL,
     
-    -- Resumen financiero
+    -- 🆕 METADATOS DE FUENTE
+    source_file_type ENUM('pdf', 'excel') NOT NULL, -- Tipo de archivo origen
+    source_filename VARCHAR(255) NOT NULL,          -- Nombre del archivo origen
+    
     total_trips INT NOT NULL DEFAULT 0,
     total_weight DECIMAL(10,2) DEFAULT 0.00,
     gross_amount DECIMAL(12,2) DEFAULT 0.00,
     total_deductions DECIMAL(12,2) DEFAULT 0.00,
     net_amount DECIMAL(12,2) DEFAULT 0.00,
     
-    -- Configuración de deducciones aplicada (histórica)
     deduction_type_applied ENUM('percentage', 'fixed_amount') NULL,
     deduction_value_applied DECIMAL(10,2) DEFAULT 0.00,
     
-    -- Estado y seguimiento
     status ENUM('generated', 'sent', 'paid', 'cancelled') DEFAULT 'generated',
     sent_date TIMESTAMP NULL,
     payment_date TIMESTAMP NULL,
     
-    -- Auditoría
     generated_by INT NOT NULL,
     notes TEXT NULL,
-    tags VARCHAR(500) NULL, -- Para categorización adicional
+    tags VARCHAR(500) NULL,
     
-    -- Control de versiones (si se regenera el mismo período)
     version INT DEFAULT 1,
     is_latest_version BOOLEAN DEFAULT TRUE,
     previous_version_id INT NULL,
@@ -211,39 +291,56 @@ CREATE TABLE reports (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
-    FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE RESTRICT, -- Cambio a RESTRICT
+    FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE RESTRICT,
     FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT,
     FOREIGN KEY (generated_by) REFERENCES users(id) ON DELETE RESTRICT,
     FOREIGN KEY (previous_version_id) REFERENCES reports(id) ON DELETE SET NULL,
     
-    -- Índices optimizados para búsquedas frecuentes
     INDEX idx_report_number (report_number),
     INDEX idx_generation_date (generation_date),
-    
-    -- ÍNDICES CLAVE PARA BÚSQUEDAS POR FECHA Y EMPRESA
     INDEX idx_company_period (company_id, period_start, period_end),
-    INDEX idx_company_name_date (company_name, period_start),
-    INDEX idx_period_company (period_start, period_end, company_id),
+    INDEX idx_source_file_type (source_file_type), -- 🆕
     INDEX idx_year_month (report_year, report_month),
-    INDEX idx_company_year (company_id, report_year),
-    
-    -- Índices adicionales para filtros comunes
     INDEX idx_status_date (status, generation_date),
-    INDEX idx_latest_version (is_latest_version, company_id),
-    INDEX idx_tags (tags),
     
-    -- Índice compuesto para búsquedas complejas
-    INDEX idx_search_combo (company_id, report_year, report_month, status),
-    
-    -- Eliminar restricción única para permitir múltiples reportes por empresa/voucher
-    -- UNIQUE KEY unique_voucher_company (voucher_id, company_id), -- REMOVIDO
-    
-    -- Restricción única para evitar duplicados de la misma versión
     UNIQUE KEY unique_voucher_company_version (voucher_id, company_id, version)
 );
 
 -- ========================================
--- 6. TABLA DE CONFIGURACIONES DEL SISTEMA
+-- 8. 🆕 TABLA DE CONFIGURACIÓN DE FORMATOS
+-- ========================================
+
+CREATE TABLE file_format_configs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    file_type ENUM('pdf', 'excel') NOT NULL,
+    config_name VARCHAR(100) NOT NULL,             -- 'default_excel', 'alternative_pdf'
+    description TEXT NULL,
+    
+    -- Mapeo de columnas (JSON)
+    column_mapping JSON NOT NULL,                  -- {"date": ["fecha", "date"], "company": ["empresa", "company"]}
+    
+    -- Validaciones específicas
+    validation_rules JSON NULL,                    -- Reglas de validación por campo
+    
+    -- Configuración de procesamiento
+    processing_options JSON NULL,                  -- Opciones específicas (headers row, date format, etc.)
+    
+    is_active BOOLEAN DEFAULT TRUE,
+    is_default BOOLEAN DEFAULT FALSE,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by INT NOT NULL,
+    
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
+    
+    INDEX idx_file_type (file_type),
+    INDEX idx_is_default (file_type, is_default),
+    UNIQUE KEY unique_config_name (file_type, config_name)
+);
+
+-- ========================================
+-- 9. TABLA DE CONFIGURACIONES DEL SISTEMA
 -- ========================================
 
 CREATE TABLE system_settings (
@@ -262,7 +359,7 @@ CREATE TABLE system_settings (
 );
 
 -- ========================================
--- 7. TABLA DE LOGS/AUDITORÍA
+-- 10. TABLA DE LOGS/AUDITORÍA
 -- ========================================
 
 CREATE TABLE activity_logs (
@@ -283,10 +380,45 @@ CREATE TABLE activity_logs (
 );
 
 -- ========================================
--- 8. DATOS INICIALES
+-- 11. 🆕 TABLA DE ESTADÍSTICAS DE ARCHIVOS
 -- ========================================
 
--- Usuario administrador por defecto
+CREATE TABLE file_statistics (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    date_processed DATE NOT NULL,
+    file_type ENUM('pdf', 'excel') NOT NULL,
+    
+    -- Contadores diarios
+    total_files_uploaded INT DEFAULT 0,
+    total_files_processed INT DEFAULT 0,
+    total_files_failed INT DEFAULT 0,
+    
+    -- Estadísticas de datos
+    total_trips_extracted INT DEFAULT 0,
+    total_companies_found INT DEFAULT 0,
+    total_amount_processed DECIMAL(15,2) DEFAULT 0.00,
+    
+    -- Métricas de rendimiento
+    avg_processing_time_seconds DECIMAL(8,2) DEFAULT 0.00,
+    avg_file_size_mb DECIMAL(8,2) DEFAULT 0.00,
+    avg_data_quality_score DECIMAL(3,2) DEFAULT 0.00,
+    
+    -- Errores comunes
+    most_common_error VARCHAR(255) NULL,
+    error_frequency INT DEFAULT 0,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE KEY unique_date_type (date_processed, file_type),
+    INDEX idx_date_processed (date_processed),
+    INDEX idx_file_type_date (file_type, date_processed)
+);
+
+-- ========================================
+-- 12. DATOS INICIALES
+-- ========================================
+
+-- Usuarios por defecto
 -- Contraseña: admin123 (cambiar en producción)
 INSERT INTO users (username, email, password_hash, full_name, role) VALUES 
 ('admin', 'admin@transport.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrador del Sistema', 'admin'),
@@ -297,28 +429,102 @@ INSERT INTO system_settings (setting_key, setting_value, setting_type, descripti
 ('site_name', 'Sistema de Gestión de Transporte', 'string', 'Nombre del sistema', 'general'),
 ('company_name', 'TransportMX', 'string', 'Nombre de la empresa', 'general'),
 ('default_currency', 'MXN', 'string', 'Moneda por defecto', 'financial'),
-('max_upload_size', '10485760', 'number', 'Tamaño máximo de archivo en bytes (10MB)', 'uploads'),
-('allowed_file_types', 'pdf', 'string', 'Tipos de archivo permitidos', 'uploads'),
+
+-- 🆕 CONFIGURACIONES PARA ARCHIVOS
+('max_upload_size_pdf', '20971520', 'number', 'Tamaño máximo PDF en bytes (20MB)', 'uploads'),
+('max_upload_size_excel', '10485760', 'number', 'Tamaño máximo Excel en bytes (10MB)', 'uploads'),
+('allowed_pdf_types', 'application/pdf', 'string', 'Tipos MIME permitidos para PDF', 'uploads'),
+('allowed_excel_types', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel', 'string', 'Tipos MIME permitidos para Excel', 'uploads'),
+
+-- CONFIGURACIONES DE PROCESAMIENTO
+('pdf_extraction_method', 'auto', 'string', 'Método de extracción PDF: auto, text, ocr', 'processing'),
+('excel_header_row', '1', 'number', 'Fila de headers en Excel por defecto', 'processing'),
+('data_quality_threshold', '0.80', 'number', 'Umbral mínimo de calidad de datos', 'processing'),
+('auto_process_files', 'false', 'boolean', 'Procesar archivos automáticamente al subir', 'processing'),
+
+-- CONFIGURACIONES FINANCIERAS
 ('default_deduction_type', 'percentage', 'string', 'Tipo de deducción por defecto', 'financial'),
 ('default_deduction_value', '5.00', 'number', 'Valor de deducción por defecto', 'financial'),
+
+-- CONFIGURACIONES DE INTERFAZ
 ('reports_per_page', '20', 'number', 'Reportes por página', 'interface'),
-('session_timeout', '3600', 'number', 'Tiempo de sesión en segundos', 'security');
+('files_per_page', '15', 'number', 'Archivos por página en listados', 'interface'),
+('dashboard_refresh_interval', '30', 'number', 'Intervalo de actualización del dashboard en segundos', 'interface'),
+
+-- CONFIGURACIONES DE SEGURIDAD
+('session_timeout', '3600', 'number', 'Tiempo de sesión en segundos', 'security'),
+('max_login_attempts', '5', 'number', 'Intentos máximos de login', 'security'),
+('file_quarantine_days', '30', 'number', 'Días que se mantienen archivos en cuarentena', 'security');
+
+-- 🆕 CONFIGURACIONES DE FORMATO DE ARCHIVOS
+INSERT INTO file_format_configs (file_type, config_name, description, column_mapping, validation_rules, processing_options, is_default, created_by) VALUES 
+
+-- Configuración Excel por defecto
+('excel', 'default_excel', 'Configuración estándar para archivos Excel de vouchers', 
+JSON_OBJECT(
+    'date', JSON_ARRAY('fecha', 'date', 'fecha_viaje', 'trip_date'),
+    'company', JSON_ARRAY('empresa', 'company', 'transportista', 'carrier'),
+    'origin', JSON_ARRAY('origen', 'origin', 'pickup', 'carga'),
+    'destination', JSON_ARRAY('destino', 'destination', 'delivery', 'descarga'),
+    'weight', JSON_ARRAY('toneladas', 'tons', 'weight', 'peso'),
+    'rate', JSON_ARRAY('tarifa', 'rate', 'precio', 'price'),
+    'vehicle', JSON_ARRAY('vehiculo', 'vehicle', 'placa', 'plate'),
+    'driver', JSON_ARRAY('chofer', 'driver', 'conductor', 'operador'),
+    'ticket', JSON_ARRAY('ticket', 'boleto', 'folio', 'documento')
+),
+JSON_OBJECT(
+    'date', JSON_OBJECT('required', true, 'format', 'date'),
+    'company', JSON_OBJECT('required', true, 'min_length', 2),
+    'weight', JSON_OBJECT('required', true, 'type', 'numeric', 'min', 0),
+    'rate', JSON_OBJECT('required', true, 'type', 'numeric', 'min', 0)
+),
+JSON_OBJECT(
+    'header_row', 1,
+    'skip_empty_rows', true,
+    'date_format', 'auto',
+    'decimal_separator', '.',
+    'thousands_separator', ','
+),
+true, 1),
+
+-- Configuración PDF por defecto
+('pdf', 'default_pdf', 'Configuración estándar para archivos PDF de vouchers',
+JSON_OBJECT(
+    'date_patterns', JSON_ARRAY('\\d{1,2}/\\d{1,2}/\\d{4}', '\\d{4}-\\d{2}-\\d{2}'),
+    'company_indicators', JSON_ARRAY('EMPRESA:', 'TRANSPORTISTA:', 'CARRIER:'),
+    'amount_patterns', JSON_ARRAY('\\$[\\d,]+\\.\\d{2}', '[\\d,]+\\.\\d{2}'),
+    'weight_indicators', JSON_ARRAY('TON', 'TONELADAS', 'KG')
+),
+JSON_OBJECT(
+    'min_confidence', 0.7,
+    'require_company_match', true,
+    'validate_amounts', true
+),
+JSON_OBJECT(
+    'extraction_method', 'auto',
+    'ocr_language', 'spa',
+    'text_cleaning', true,
+    'table_detection', true
+),
+true, 1);
 
 -- Empresas de ejemplo
-INSERT INTO companies (name, legal_name, tax_id, contact_person, phone, email, deduction_type, deduction_value) VALUES 
-('Transportes del Norte SA', 'Transportes del Norte S.A. de C.V.', 'TNO940525XX1', 'Juan Pérez', '555-0001', 'contacto@tnorte.com', 'percentage', 5.00),
-('Fletes Rápidos', 'Fletes Rápidos del Pacífico S.A. de C.V.', 'FRP850315XX2', 'María González', '555-0002', 'info@fletesrapidos.com', 'percentage', 4.50),
-('Carga Pesada MX', 'Carga Pesada Mexicana S.A. de C.V.', 'CPM920807XX3', 'Carlos Rodríguez', '555-0003', 'ventas@cargapesada.com', 'fixed_amount', 500.00);
+INSERT INTO companies (name, legal_name, tax_id, contact_person, phone, email, deduction_type, deduction_value, created_by) VALUES 
+('Transportes del Norte SA', 'Transportes del Norte S.A. de C.V.', 'TNO940525XX1', 'Juan Pérez', '555-0001', 'contacto@tnorte.com', 'percentage', 5.00, 1),
+('Fletes Rápidos', 'Fletes Rápidos del Pacífico S.A. de C.V.', 'FRP850315XX2', 'María González', '555-0002', 'info@fletesrapidos.com', 'percentage', 4.50, 1),
+('Carga Pesada MX', 'Carga Pesada Mexicana S.A. de C.V.', 'CPM920807XX3', 'Carlos Rodríguez', '555-0003', 'ventas@cargapesada.com', 'fixed_amount', 500.00, 1),
+('Transporte Express', 'Transportes Express del Bajío S.A. de C.V.', 'TEB870412XX4', 'Ana Martínez', '555-0004', 'admin@texpress.com', 'percentage', 6.00, 1),
+('Logística Integral', 'Logística Integral Mexicana S.A. de C.V.', 'LIM930228XX5', 'Roberto Silva', '555-0005', 'info@logintegral.com', 'percentage', 3.50, 1);
 
 -- Log inicial
 INSERT INTO activity_logs (user_id, action, description, ip_address) VALUES 
-(1, 'SYSTEM_INSTALL', 'Sistema instalado correctamente', '127.0.0.1');
+(1, 'SYSTEM_INSTALL', 'Sistema instalado correctamente con soporte PDF + Excel', '127.0.0.1');
 
 -- ========================================
--- 9. VISTAS ÚTILES
+-- 13. VISTAS ÚTILES ACTUALIZADAS
 -- ========================================
 
--- Vista de resumen por empresa
+-- Vista de resumen por empresa (actualizada)
 CREATE VIEW company_summary AS
 SELECT 
     c.id,
@@ -330,42 +536,141 @@ SELECT
     SUM(t.subtotal) as gross_total,
     SUM(t.deduction_amount) as total_deductions,
     SUM(t.total_amount) as net_total,
-    COUNT(r.id) as reports_generated
+    COUNT(r.id) as reports_generated,
+    -- 🆕 Estadísticas por tipo de archivo
+    COUNT(CASE WHEN t.data_source_type = 'pdf' THEN 1 END) as trips_from_pdf,
+    COUNT(CASE WHEN t.data_source_type = 'excel' THEN 1 END) as trips_from_excel,
+    AVG(t.extraction_confidence) as avg_extraction_confidence
 FROM companies c
 LEFT JOIN trips t ON c.id = t.company_id
 LEFT JOIN reports r ON c.id = r.company_id
 WHERE c.is_active = 1
 GROUP BY c.id, c.name, c.tax_id;
 
--- Vista de vouchers con estadísticas
+-- Vista de vouchers con estadísticas (actualizada)
 CREATE VIEW voucher_stats AS
 SELECT 
     v.id,
     v.voucher_number,
     v.original_filename,
+    v.file_type,
+    v.file_format,
+    v.extraction_method,
     v.upload_date,
     v.status,
+    v.data_quality_score,
+    v.total_rows_detected,
+    v.total_rows_valid,
+    v.total_rows_errors,
     COUNT(t.id) as total_trips,
     COUNT(DISTINCT t.company_id) as companies_count,
     SUM(t.weight_tons) as total_weight,
     SUM(t.total_amount) as total_amount,
+    AVG(t.extraction_confidence) as avg_confidence,
+    COUNT(CASE WHEN t.manual_review_required = 1 THEN 1 END) as trips_needing_review,
     u.full_name as uploaded_by_name
 FROM vouchers v
 LEFT JOIN trips t ON v.id = t.voucher_id
 LEFT JOIN users u ON v.uploaded_by = u.id
-GROUP BY v.id, v.voucher_number, v.original_filename, v.upload_date, v.status, u.full_name;
+GROUP BY v.id, v.voucher_number, v.original_filename, v.file_type, v.file_format, 
+         v.extraction_method, v.upload_date, v.status, v.data_quality_score,
+         v.total_rows_detected, v.total_rows_valid, v.total_rows_errors, u.full_name;
+
+-- 🆕 Vista de estadísticas de procesamiento
+CREATE VIEW processing_statistics AS
+SELECT 
+    DATE(v.upload_date) as date,
+    v.file_type,
+    COUNT(*) as files_uploaded,
+    COUNT(CASE WHEN v.status = 'processed' THEN 1 END) as files_processed,
+    COUNT(CASE WHEN v.status = 'error' THEN 1 END) as files_failed,
+    AVG(v.processing_time_seconds) as avg_processing_time,
+    AVG(v.data_quality_score) as avg_quality_score,
+    SUM(v.total_trips) as total_trips_extracted,
+    SUM(v.total_amount) as total_amount_processed
+FROM vouchers v
+WHERE v.upload_date >= DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY)
+GROUP BY DATE(v.upload_date), v.file_type
+ORDER BY date DESC, v.file_type;
+
+-- 🆕 Vista de errores de validación por archivo
+CREATE VIEW validation_errors_summary AS
+SELECT 
+    v.id as voucher_id,
+    v.original_filename,
+    v.file_type,
+    COUNT(e.id) as total_errors,
+    COUNT(CASE WHEN e.severity = 'error' THEN 1 END) as critical_errors,
+    COUNT(CASE WHEN e.severity = 'warning' THEN 1 END) as warnings,
+    COUNT(CASE WHEN e.is_resolved = 1 THEN 1 END) as resolved_errors,
+    GROUP_CONCAT(DISTINCT e.error_type) as error_types
+FROM vouchers v
+LEFT JOIN data_validation_errors e ON v.id = e.voucher_id
+GROUP BY v.id, v.original_filename, v.file_type;
 
 -- ========================================
--- 10. ÍNDICES ADICIONALES PARA OPTIMIZACIÓN
+-- 14. ÍNDICES ADICIONALES PARA OPTIMIZACIÓN
 -- ========================================
 
 -- Índices compuestos para consultas frecuentes
 CREATE INDEX idx_trips_voucher_company_date ON trips(voucher_id, company_id, trip_date);
+CREATE INDEX idx_trips_source_confidence ON trips(data_source_type, extraction_confidence);
 CREATE INDEX idx_reports_company_period ON reports(company_id, period_start, period_end);
 CREATE INDEX idx_vouchers_status_date ON vouchers(status, upload_date);
+CREATE INDEX idx_vouchers_type_status ON vouchers(file_type, status, upload_date);
 
--- Índice de texto completo para búsquedas
+-- 🆕 Índices para nuevas funcionalidades
+CREATE INDEX idx_processing_logs_voucher_time ON file_processing_logs(voucher_id, created_at);
+CREATE INDEX idx_validation_errors_voucher_severity ON data_validation_errors(voucher_id, severity, is_resolved);
+CREATE INDEX idx_file_stats_date_type ON file_statistics(date_processed, file_type);
+
+-- Índices de texto completo para búsquedas
 ALTER TABLE companies ADD FULLTEXT(name, legal_name, contact_person);
 ALTER TABLE trips ADD FULLTEXT(origin, destination, driver_name, product_type);
+ALTER TABLE data_validation_errors ADD FULLTEXT(error_message);
+
+-- ========================================
+-- 15. TRIGGERS PARA AUTOMATIZACIÓN
+-- ========================================
+
+-- 🆕 Trigger para actualizar estadísticas al procesar archivos
+DELIMITER $
+
+CREATE TRIGGER update_voucher_stats_after_trip_insert
+AFTER INSERT ON trips
+FOR EACH ROW
+BEGIN
+    UPDATE vouchers 
+    SET total_trips = total_trips + 1,
+        total_amount = total_amount + NEW.total_amount
+    WHERE id = NEW.voucher_id;
+END$
+
+CREATE TRIGGER update_voucher_stats_after_trip_delete
+AFTER DELETE ON trips
+FOR EACH ROW
+BEGIN
+    UPDATE vouchers 
+    SET total_trips = total_trips - 1,
+        total_amount = total_amount - OLD.total_amount
+    WHERE id = OLD.voucher_id;
+END$
+
+-- 🆕 Trigger para mantener estadísticas diarias
+CREATE TRIGGER update_daily_stats_after_voucher_update
+AFTER UPDATE ON vouchers
+FOR EACH ROW
+BEGIN
+    IF OLD.status != NEW.status AND NEW.status = 'processed' THEN
+        INSERT INTO file_statistics (date_processed, file_type, total_files_processed, total_trips_extracted, total_amount_processed)
+        VALUES (CURDATE(), NEW.file_type, 1, NEW.total_trips, NEW.total_amount)
+        ON DUPLICATE KEY UPDATE
+            total_files_processed = total_files_processed + 1,
+            total_trips_extracted = total_trips_extracted + NEW.total_trips,
+            total_amount_processed = total_amount_processed + NEW.total_amount;
+    END IF;
+END$
+
+DELIMITER ;
 
 COMMIT;

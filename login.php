@@ -1,7 +1,6 @@
 <?php
 /**
- * Capital Transport LLP Report Manager
- * Login Page - Minimalista
+ * Login Page - Simple y Limpio
  */
 
 session_start();
@@ -12,36 +11,49 @@ if (isset($_SESSION['user_id'])) {
     exit();
 }
 
-// Incluir configuración si existe
-if (file_exists('config/config.php')) {
-    require_once 'config/config.php';
+// Incluir configuración y clases
+require_once 'config/config.php';
+require_once 'classes/Database.php';
+require_once 'classes/Logger.php';
+require_once 'classes/Auth.php';
+
+$auth = new Auth();
+$error_message = '';
+$success_message = '';
+
+// Verificar si viene de logout
+if (isset($_GET['logout']) && $_GET['logout'] === 'success') {
+    $success_message = 'Sesión cerrada correctamente';
 }
 
 // Manejar el login
-$error_message = '';
 if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
     $username = trim($_POST['username']);
     $password = $_POST['password'];
+    $remember = isset($_POST['remember']);
     
-    // Aquí irá la validación real con la base de datos
-    // Por ahora, credenciales de prueba
-    if ($username === 'admin' && $password === 'admin123') {
-        $_SESSION['user_id'] = 1;
-        $_SESSION['username'] = $username;
-        $_SESSION['role'] = 'admin';
-        header('Location: pages/dashboard.php');
-        exit();
+    if (empty($username) || empty($password)) {
+        $error_message = 'Por favor ingresa usuario y contraseña';
     } else {
-        $error_message = 'Invalid credentials. Please try again.';
+        $result = $auth->login($username, $password, $remember);
+        
+        if ($result['success']) {
+            // Login exitoso - redirigir
+            $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'pages/dashboard.php';
+            header('Location: ' . $redirect);
+            exit();
+        } else {
+            $error_message = $result['message'];
+        }
     }
 }
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Capital Transport LLP</title>
+    <title>Login - <?php echo SITE_NAME ?? 'Transport Management'; ?></title>
     
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -213,6 +225,17 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
             text-align: center;
         }
 
+        .success-message {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #a7f3d0;
+            text-align: center;
+        }
+
         .loading-spinner {
             display: none;
             margin-right: 0.5rem;
@@ -224,6 +247,59 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
 
         .loading .button-text {
             opacity: 0.7;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 0.5rem;
+        }
+
+        .checkbox-group label {
+            color: #666;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .back-link {
+            text-align: center;
+            margin-top: 1rem;
+        }
+
+        .back-link a {
+            color: #666;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }
+
+        .back-link a:hover {
+            color: #dc2626;
+        }
+
+        .test-credentials {
+            background: #f8f9fa;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .test-credentials strong {
+            color: #2c2c2c;
+        }
+
+        .test-credentials code {
+            background: #e5e5e5;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
         }
 
         /* Animations */
@@ -282,7 +358,7 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
                         <i class="fas fa-truck"></i>
                     <?php endif; ?>
                 </div>
-                <h1 class="login-title">Capital Transport LLP</h1>
+                <h1 class="login-title"><?php echo COMPANY_NAME ?? 'Capital Transport LLP'; ?></h1>
                 <p class="login-subtitle">Report Manager System</p>
             </div>
 
@@ -293,9 +369,16 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
                 </div>
             <?php endif; ?>
 
+            <?php if ($success_message): ?>
+                <div class="success-message">
+                    <i class="fas fa-check-circle"></i>
+                    <?php echo htmlspecialchars($success_message); ?>
+                </div>
+            <?php endif; ?>
+
             <form class="login-form" method="POST" id="loginForm">
                 <div class="form-group">
-                    <label class="form-label" for="username">Username</label>
+                    <label class="form-label" for="username">Usuario</label>
                     <div style="position: relative;">
                         <i class="fas fa-user input-icon"></i>
                         <input 
@@ -303,15 +386,16 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
                             id="username" 
                             name="username" 
                             class="form-input" 
-                            placeholder="Enter your username"
+                            placeholder="Ingresa tu usuario"
                             value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username']) : ''; ?>"
                             required
+                            autocomplete="username"
                         >
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label" for="password">Password</label>
+                    <label class="form-label" for="password">Contraseña</label>
                     <div style="position: relative;">
                         <i class="fas fa-lock input-icon"></i>
                         <input 
@@ -319,17 +403,35 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
                             id="password" 
                             name="password" 
                             class="form-input" 
-                            placeholder="Enter your password"
+                            placeholder="Ingresa tu contraseña"
                             required
+                            autocomplete="current-password"
                         >
                     </div>
                 </div>
 
+                <div class="checkbox-group">
+                    <input type="checkbox" id="remember" name="remember" value="1">
+                    <label for="remember">Recordar sesión</label>
+                </div>
+
                 <button type="submit" class="login-button" id="loginButton">
                     <i class="fas fa-spinner loading-spinner"></i>
-                    <span class="button-text">Sign In</span>
+                    <span class="button-text">Iniciar Sesión</span>
                 </button>
             </form>
+
+            <div class="test-credentials">
+                <strong>Credenciales de prueba:</strong><br>
+                Usuario: <code>admin</code> | Contraseña: <code>admin123</code><br>
+                Usuario: <code>operador</code> | Contraseña: <code>admin123</code>
+            </div>
+
+            <div class="back-link">
+                <a href="splash.php">
+                    <i class="fas fa-arrow-left"></i> Volver al inicio
+                </a>
+            </div>
         </div>
     </div>
 
@@ -345,15 +447,25 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
 
             // Manejar submit del form
             form.addEventListener('submit', function(e) {
+                const username = usernameInput.value.trim();
+                const password = passwordInput.value;
+                
+                // Validación básica
+                if (!username || !password) {
+                    e.preventDefault();
+                    alert('Por favor completa todos los campos');
+                    return;
+                }
+                
                 // Mostrar loading state
                 button.classList.add('loading');
                 button.disabled = true;
                 
-                // En caso de error, remover loading después de un tiempo
+                // En caso de error en servidor, remover loading después de tiempo
                 setTimeout(() => {
                     button.classList.remove('loading');
                     button.disabled = false;
-                }, 3000);
+                }, 5000);
             });
 
             // Validación en tiempo real
@@ -376,6 +488,20 @@ if ($_POST && isset($_POST['username']) && isset($_POST['password'])) {
                     passwordInput.focus();
                 }
             });
+
+            // Auto-hide messages after 5 seconds
+            setTimeout(() => {
+                const messages = document.querySelectorAll('.error-message, .success-message');
+                messages.forEach(msg => {
+                    msg.style.transition = 'opacity 0.5s ease';
+                    msg.style.opacity = '0';
+                    setTimeout(() => {
+                        if (msg.parentNode) {
+                            msg.parentNode.removeChild(msg);
+                        }
+                    }, 500);
+                });
+            }, 5000);
         });
     </script>
 </body>

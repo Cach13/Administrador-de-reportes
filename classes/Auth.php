@@ -1,14 +1,15 @@
 <?php
 /**
- * Clase Auth - Manejo de autenticación y sesiones
+ * Clase Auth - Sistema Completo de Autenticación
  */
 
 class Auth {
-    private $pdo;
+    private $db;
+    private $logger;
     
     public function __construct() {
-        global $pdo;
-        $this->pdo = $pdo;
+        $this->db = Database::getInstance();
+        $this->logger = new Logger();
     }
     
     /**
@@ -17,17 +18,18 @@ class Auth {
     public function login($username, $password, $remember = false) {
         try {
             // Verificar si el usuario existe y está activo
-            $stmt = $this->pdo->prepare("
+            $stmt = $this->db->query("
                 SELECT id, username, email, password_hash, full_name, role, 
                        failed_login_attempts, locked_until, is_active
                 FROM users 
-                WHERE (username = :username OR email = :username) 
+                WHERE (username = ? OR email = ?) 
                 AND is_active = 1
-            ");
-            $stmt->execute(['username' => $username]);
+            ", [$username, $username]);
+            
             $user = $stmt->fetch();
             
             if (!$user) {
+                $this->logger->logFailedLogin($username, 'Usuario no encontrado');
                 return [
                     'success' => false,
                     'message' => 'Usuario no encontrado o inactivo'
@@ -47,6 +49,7 @@ class Auth {
             if (!password_verify($password, $user['password_hash'])) {
                 // Incrementar intentos fallidos
                 $this->incrementFailedAttempts($user['id']);
+                $this->logger->logFailedLogin($username, 'Contraseña incorrecta');
                 
                 return [
                     'success' => false,
@@ -64,7 +67,7 @@ class Auth {
             $this->updateLastLogin($user['id']);
             
             // Log de login exitoso
-            $this->logActivity($user['id'], 'USER_LOGIN', 'Usuario inició sesión correctamente');
+            $this->logger->logLogin($user['id'], $user['username']);
             
             return [
                 'success' => true,
@@ -77,8 +80,8 @@ class Auth {
                 ]
             ];
             
-        } catch (PDOException $e) {
-            error_log("Error en login: " . $e->getMessage());
+        } catch (Exception $e) {
+            $this->logger->logError(null, "Error en login: " . $e->getMessage());
             return [
                 'success' => false,
                 'message' => 'Error interno del sistema'
@@ -101,8 +104,8 @@ class Auth {
         $_SESSION['role'] = $user['role'];
         $_SESSION['login_time'] = time();
         $_SESSION['last_activity'] = time();
-        $_SESSION['ip_address'] = $_SERVER['REMOTE_ADDR'];
-        $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
+        $_SESSION['ip_address'] = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
         
         // Si se selecciona "recordar sesión"
         if ($remember) {
@@ -118,7 +121,7 @@ class Auth {
     public function logout() {
         if (isset($_SESSION['user_id'])) {
             // Log de logout
-            $this->logActivity($_SESSION['user_id'], 'USER_LOGOUT', 'Usuario cerró sesión');
+            $this->logger->logLogout($_SESSION['user_id'], $_SESSION['username']);
         }
         
         // Destruir todas las variables de sesión
@@ -191,24 +194,62 @@ class Auth {
     }
     
     /**
-     * Requerir autenticación
+     * Crear nuevo usuario
      */
-    public function requireAuth() {
-        if (!$this->isAuthenticated()) {
-            header('Location: /login.php');
-            exit();
-        }
-    }
-    
-    /**
-     * Requerir permiso específico
-     */
-    public function requirePermission($permission) {
-        $this->requireAuth();
-        
-        if (!$this->hasPermission($permission)) {
-            header('HTTP/1.1 403 Forbidden');
-            die('Acceso denegado: No tienes permisos para realizar esta acción.');
+    public function createUser($userData) {
+        try {
+            // Validar datos requeridos
+            $required = ['username', 'email', 'password', 'full_name'];
+            foreach ($required as $field) {
+                if (empty($userData[$field])) {
+                    return ['success' => false, 'message' => "Campo {$field} es requerido"];
+                }
+            }
+            
+            // Verificar que username/email no existan
+            $stmt = $this->db->query("SELECT id FROM users WHERE username = ? OR email = ?", 
+                [$userData['username'], $userData['email']]);
+            
+            if ($stmt->fetch()) {
+                return ['success' => false, 'message' => 'Usuario o email ya existe'];
+            }
+            
+            // Validar fortaleza de contraseña
+            $validation = $this->validatePasswordStrength($userData['password']);
+            if (!$validation['valid']) {
+                return ['success' => false, 'message' => implode(', ', $validation['errors'])];
+            }
+            
+            // Hash de la contraseña
+            $hashedPassword = password_hash($userData['password'], PASSWORD_DEFAULT, ['cost' => BCRYPT_COST]);
+            
+            // Insertar usuario
+            $userId = $this->db->insert('users', [
+                'username' => $userData['username'],
+                'email' => $userData['email'],
+                'password_hash' => $hashedPassword,
+                'full_name' => $userData['full_name'],
+                'role' => $userData['role'] ?? 'operator',
+                'phone' => $userData['phone'] ?? null,
+                'created_at' => date('Y-m-d H:i:s')
+            ]);
+            
+            if ($userId) {
+                $this->logger->logCrud($_SESSION['user_id'] ?? null, 'CREATE', 'users', $userId, 
+                    "Nuevo usuario creado: " . $userData['username']);
+                
+                return [
+                    'success' => true,
+                    'message' => 'Usuario creado correctamente',
+                    'user_id' => $userId
+                ];
+            }
+            
+            return ['success' => false, 'message' => 'Error al crear usuario'];
+            
+        } catch (Exception $e) {
+            $this->logger->logError($_SESSION['user_id'] ?? null, "Error creando usuario: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Error interno del sistema'];
         }
     }
     
@@ -217,27 +258,18 @@ class Auth {
      */
     private function incrementFailedAttempts($userId) {
         try {
-            $stmt = $this->pdo->prepare("
+            $this->db->query("
                 UPDATE users 
                 SET failed_login_attempts = failed_login_attempts + 1,
                     locked_until = CASE 
-                        WHEN failed_login_attempts + 1 >= :max_attempts 
-                        THEN DATE_ADD(NOW(), INTERVAL :lockout_minutes MINUTE)
+                        WHEN failed_login_attempts + 1 >= ? 
+                        THEN DATE_ADD(NOW(), INTERVAL ? MINUTE)
                         ELSE locked_until 
                     END
-                WHERE id = :user_id
-            ");
+                WHERE id = ?
+            ", [MAX_LOGIN_ATTEMPTS, LOCKOUT_TIME / 60, $userId]);
             
-            $stmt->execute([
-                'max_attempts' => MAX_LOGIN_ATTEMPTS,
-                'lockout_minutes' => LOCKOUT_TIME / 60,
-                'user_id' => $userId
-            ]);
-            
-            // Log del intento fallido
-            $this->logActivity($userId, 'LOGIN_FAILED', 'Intento de login fallido');
-            
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             error_log("Error incrementando intentos fallidos: " . $e->getMessage());
         }
     }
@@ -247,14 +279,13 @@ class Auth {
      */
     private function resetFailedAttempts($userId) {
         try {
-            $stmt = $this->pdo->prepare("
+            $this->db->query("
                 UPDATE users 
                 SET failed_login_attempts = 0, locked_until = NULL 
-                WHERE id = :user_id
-            ");
-            $stmt->execute(['user_id' => $userId]);
+                WHERE id = ?
+            ", [$userId]);
             
-        } catch (PDOException $e) {
+        } catch (Exception $e) {
             error_log("Error reseteando intentos fallidos: " . $e->getMessage());
         }
     }
@@ -264,86 +295,9 @@ class Auth {
      */
     private function updateLastLogin($userId) {
         try {
-            $stmt = $this->pdo->prepare("
-                UPDATE users 
-                SET last_login = NOW() 
-                WHERE id = :user_id
-            ");
-            $stmt->execute(['user_id' => $userId]);
-            
-        } catch (PDOException $e) {
+            $this->db->query("UPDATE users SET last_login = NOW() WHERE id = ?", [$userId]);
+        } catch (Exception $e) {
             error_log("Error actualizando último login: " . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Registrar actividad en logs
-     */
-    private function logActivity($userId, $action, $description) {
-        try {
-            $stmt = $this->pdo->prepare("
-                INSERT INTO activity_logs (user_id, action, description, ip_address, user_agent, created_at)
-                VALUES (:user_id, :action, :description, :ip_address, :user_agent, NOW())
-            ");
-            
-            $stmt->execute([
-                'user_id' => $userId,
-                'action' => $action,
-                'description' => $description,
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
-            ]);
-            
-        } catch (PDOException $e) {
-            error_log("Error registrando actividad: " . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Cambiar contraseña
-     */
-    public function changePassword($userId, $currentPassword, $newPassword) {
-        try {
-            // Verificar contraseña actual
-            $stmt = $this->pdo->prepare("SELECT password_hash FROM users WHERE id = :user_id");
-            $stmt->execute(['user_id' => $userId]);
-            $user = $stmt->fetch();
-            
-            if (!$user || !password_verify($currentPassword, $user['password_hash'])) {
-                return [
-                    'success' => false,
-                    'message' => 'Contraseña actual incorrecta'
-                ];
-            }
-            
-            // Actualizar contraseña
-            $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT, ['cost' => BCRYPT_COST]);
-            
-            $stmt = $this->pdo->prepare("
-                UPDATE users 
-                SET password_hash = :password_hash 
-                WHERE id = :user_id
-            ");
-            
-            $stmt->execute([
-                'password_hash' => $hashedPassword,
-                'user_id' => $userId
-            ]);
-            
-            // Log del cambio
-            $this->logActivity($userId, 'PASSWORD_CHANGED', 'Usuario cambió su contraseña');
-            
-            return [
-                'success' => true,
-                'message' => 'Contraseña actualizada correctamente'
-            ];
-            
-        } catch (PDOException $e) {
-            error_log("Error cambiando contraseña: " . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Error interno del sistema'
-            ];
         }
     }
     
@@ -373,45 +327,6 @@ class Auth {
             'valid' => empty($errors),
             'errors' => $errors
         ];
-    }
-    
-    /**
-     * Generar token para recuperación de contraseña
-     */
-    public function generatePasswordResetToken($email) {
-        try {
-            // Verificar si el usuario existe
-            $stmt = $this->pdo->prepare("SELECT id FROM users WHERE email = :email AND is_active = 1");
-            $stmt->execute(['email' => $email]);
-            $user = $stmt->fetch();
-            
-            if (!$user) {
-                return [
-                    'success' => false,
-                    'message' => 'Email no encontrado'
-                ];
-            }
-            
-            // Generar token único
-            $token = bin2hex(random_bytes(32));
-            $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
-            
-            // Guardar token (se necesitaría crear tabla password_resets)
-            // Por ahora solo simulamos
-            
-            return [
-                'success' => true,
-                'message' => 'Token generado correctamente',
-                'token' => $token
-            ];
-            
-        } catch (PDOException $e) {
-            error_log("Error generando token: " . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Error interno del sistema'
-            ];
-        }
     }
 }
 ?>

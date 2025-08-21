@@ -11,8 +11,8 @@ if (session_status() == PHP_SESSION_NONE) {
 
 // Incluir configuración y clases necesarias
 require_once dirname(__DIR__) . '/config/config.php';
-require_once dirname(__DIR__) . '/config/database.php';
-require_once dirname(__DIR__) . '/config/auth.php';
+require_once dirname(__DIR__) . '/classes/Database.php';
+require_once dirname(__DIR__) . '/classes/Logger.php';
 require_once dirname(__DIR__) . '/classes/Auth.php';
 
 $auth = new Auth();
@@ -42,29 +42,126 @@ $user_role = $current_user['role'];
 $is_admin = ($user_role === 'admin');
 $is_operator = ($user_role === 'operator');
 
-// Función helper para verificar permisos
-function checkPermission($permission) {
-    global $auth;
-    return $auth->hasPermission($permission);
+// ========================================
+// FUNCIONES DE AUTENTICACIÓN Y PERMISOS
+// ========================================
+
+/**
+ * Verificar permisos del usuario
+ */
+function hasPermission($permission) {
+    if (!isset($_SESSION['role'])) {
+        return false;
+    }
+    
+    $userPermissions = PERMISSIONS[$_SESSION['role']] ?? [];
+    return in_array($permission, $userPermissions);
 }
 
-// Función helper para requerir permisos
+/**
+ * Requerir permiso específico
+ */
 function requirePermission($permission) {
-    global $auth;
-    $auth->requirePermission($permission);
+    if (!hasPermission($permission)) {
+        header('HTTP/1.1 403 Forbidden');
+        die('Acceso denegado: No tienes permisos para realizar esta acción.');
+    }
 }
 
-// Función para mostrar nombre del usuario
+/**
+ * Verificar si es admin
+ */
+function isAdmin() {
+    return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
+}
+
+/**
+ * Verificar si es operador
+ */
+function isOperator() {
+    return isset($_SESSION['role']) && $_SESSION['role'] === 'operator';
+}
+
+/**
+ * Función helper para verificar permisos (alias)
+ */
+function checkPermission($permission) {
+    return hasPermission($permission);
+}
+
+/**
+ * Función helper para mostrar nombre del usuario
+ */
 function getUserDisplayName() {
     global $full_name, $username;
     return !empty($full_name) ? $full_name : $username;
 }
 
-// Función para obtener rol del usuario en español
+/**
+ * Función helper para obtener rol del usuario en español
+ */
 function getUserRoleText() {
     global $user_role;
     return ROLES[$user_role] ?? $user_role;
 }
+
+/**
+ * Función para cerrar sesión
+ */
+function logout() {
+    global $auth;
+    $auth->logout();
+}
+
+/**
+ * Función para obtener información completa del usuario
+ */
+function getCurrentUserInfo() {
+    global $current_user;
+    return $current_user;
+}
+
+/**
+ * Función para verificar si la sesión está activa
+ */
+function isSessionActive() {
+    global $auth;
+    return $auth->isAuthenticated();
+}
+
+/**
+ * Función para renovar sesión
+ */
+function renewSession() {
+    if (isset($_SESSION['last_activity'])) {
+        $_SESSION['last_activity'] = time();
+    }
+}
+
+/**
+ * Función para obtener tiempo restante de sesión
+ */
+function getSessionTimeRemaining() {
+    if (!isset($_SESSION['last_activity'])) {
+        return 0;
+    }
+    
+    $elapsed = time() - $_SESSION['last_activity'];
+    $remaining = SESSION_TIMEOUT - $elapsed;
+    
+    return max(0, $remaining);
+}
+
+/**
+ * Función para verificar si la sesión expirará pronto
+ */
+function isSessionExpiringSoon($threshold = 300) { // 5 minutos
+    $remaining = getSessionTimeRemaining();
+    return $remaining > 0 && $remaining <= $threshold;
+}
+
+// Renovar automáticamente la sesión en cada verificación
+renewSession();
 
 // Prevenir acceso directo a este archivo
 if (basename($_SERVER['PHP_SELF']) == 'auth-check.php') {
