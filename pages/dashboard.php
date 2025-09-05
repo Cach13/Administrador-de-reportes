@@ -1,6 +1,6 @@
 <?php
 /**
- * Dashboard Principal - Limpio y Enfocado
+ * Dashboard Principal - Estilo actualizado Capital Transport
  * Transport Management System
  */
 
@@ -14,8 +14,8 @@ $db = Database::getInstance();
 try {
     $stats = [];
     
-    // Estadísticas básicas - CORREGIDO: usar fetch() en lugar de fetchValue()
-    $companies_result = $db->fetch("SELECT COUNT(*) as total FROM companies WHERE active = 1");
+    // Estadísticas básicas
+    $companies_result = $db->fetch("SELECT COUNT(*) as total FROM companies WHERE is_active = 1");
     $stats['total_companies'] = $companies_result['total'] ?? 0;
     
     $vouchers_result = $db->fetch("SELECT COUNT(*) as total FROM vouchers");
@@ -24,27 +24,28 @@ try {
     $trips_result = $db->fetch("SELECT COUNT(*) as total FROM trips");
     $stats['total_trips'] = $trips_result['total'] ?? 0;
     
-    $pending_result = $db->fetch("SELECT COUNT(*) as total FROM vouchers WHERE status = 'pending'");
+    $pending_result = $db->fetch("SELECT COUNT(*) as total FROM vouchers WHERE status = 'uploaded'");
     $stats['pending_vouchers'] = $pending_result['total'] ?? 0;
     
-    // Estadísticas financieras - CORREGIDO: usar fetch() en lugar de fetchValue()
-    $amount_result = $db->fetch("SELECT SUM(total_amount) as total FROM trips");
+    // Estadísticas financieras
+    $amount_result = $db->fetch("SELECT SUM(amount) as total FROM trips");
     $stats['total_amount'] = $amount_result['total'] ?? 0;
     
-    $month_result = $db->fetch("SELECT SUM(total_amount) as total FROM trips WHERE MONTH(trip_date) = MONTH(CURRENT_DATE()) AND YEAR(trip_date) = YEAR(CURRENT_DATE())");
+    $month_result = $db->fetch("SELECT SUM(amount) as total FROM trips WHERE MONTH(trip_date) = MONTH(CURRENT_DATE()) AND YEAR(trip_date) = YEAR(CURRENT_DATE())");
     $stats['this_month'] = $month_result['total'] ?? 0;
     
     // Últimos vouchers procesados
     $recent_vouchers = $db->fetchAll("
         SELECT v.*, 
-               DATE_FORMAT(v.processed_at, '%d/%m/%Y %H:%i') as formatted_date,
+               u.full_name as uploaded_by_name,
                COUNT(t.id) as trip_count,
-               SUM(t.total_amount) as total_value
+               SUM(t.amount) as total_value
         FROM vouchers v 
+        LEFT JOIN users u ON v.uploaded_by = u.id
         LEFT JOIN trips t ON v.id = t.voucher_id 
         WHERE v.status = 'processed' 
         GROUP BY v.id 
-        ORDER BY v.processed_at DESC 
+        ORDER BY v.upload_date DESC 
         LIMIT 5
     ");
     
@@ -61,68 +62,180 @@ $page_title = "Dashboard Principal";
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $page_title; ?> - Transport Management</title>
-    
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <!-- Dashboard CSS -->
-    <link href="../assets/css/dashboard.css" rel="stylesheet">
-    
+    <title><?php echo $page_title; ?> - Capital Transport</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
+        /* PALETA DE COLORES CAPITAL TRANSPORT */
         :root {
             --primary-red: #dc2626;
             --dark-gray: #2c2c2c;
+            --darker-gray: #1a1a1a;
             --light-gray: #f5f5f5;
+            --success-green: #10b981;
+            --warning-orange: #f59e0b;
+            --error-red: #ef4444;
+            --info-blue: #3b82f6;
             --white: #ffffff;
+            --border-light: #e5e5e5;
             --text-muted: #6b7280;
-            --border-light: #e5e7eb;
-            --success-green: #059669;
-            --warning-yellow: #d97706;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
         body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: var(--light-gray);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        }
-
-        .dashboard-container {
-            min-height: 100vh;
-            padding: 0;
+            color: var(--dark-gray);
+            line-height: 1.6;
         }
 
         /* HEADER */
-        .dashboard-header {
-            background: linear-gradient(135deg, var(--primary-red), #b91c1c);
-            color: white;
-            padding: 2rem 0;
-            box-shadow: 0 4px 20px rgba(220, 38, 38, 0.2);
+        .header {
+            background: linear-gradient(135deg, var(--dark-gray) 0%, var(--darker-gray) 100%);
+            color: var(--white);
+            padding: 1rem 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
-        .welcome-section h1 {
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .header-logo {
+            width: 40px;
+            height: 40px;
+            background: var(--primary-red);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .header-logo i {
+            color: var(--white);
+            font-size: 1.2rem;
+        }
+
+        .company-info h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary-red);
+        }
+
+        .company-info p {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: var(--white);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--white);
+            text-decoration: none;
+        }
+
+        .nav-link.active {
+            background: var(--primary-red);
+        }
+
+        .logout-btn {
+            background: var(--primary-red);
+            color: var(--white);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logout-btn:hover {
+            background: #b91c1c;
+            color: var(--white);
+            text-decoration: none;
+        }
+
+        /* MAIN CONTENT */
+        .main-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .page-title {
             font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--dark-gray);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
 
-        .welcome-section p {
-            opacity: 0.9;
-            font-size: 1.1rem;
+        .page-title i {
+            color: var(--primary-red);
+        }
+
+        .page-actions {
+            display: flex;
+            gap: 1rem;
         }
 
         /* STATS CARDS */
-        .stats-row {
-            margin: -3rem 0 2rem 0;
-            position: relative;
-            z-index: 10;
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
         }
 
         .stat-card {
-            background: white;
+            background: var(--white);
             border-radius: 16px;
             padding: 2rem;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
             border: 2px solid transparent;
             transition: all 0.3s ease;
             text-align: center;
@@ -130,7 +243,7 @@ $page_title = "Dashboard Principal";
 
         .stat-card:hover {
             transform: translateY(-4px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
         }
 
         .stat-icon {
@@ -145,10 +258,10 @@ $page_title = "Dashboard Principal";
             color: white;
         }
 
-        .stat-icon.companies { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-        .stat-icon.vouchers { background: linear-gradient(135deg, #059669, #047857); }
-        .stat-icon.trips { background: linear-gradient(135deg, #d97706, #c2410c); }
-        .stat-icon.amount { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+        .stat-icon.companies { background: linear-gradient(135deg, var(--info-blue), #2563eb); }
+        .stat-icon.vouchers { background: linear-gradient(135deg, var(--success-green), #047857); }
+        .stat-icon.trips { background: linear-gradient(135deg, var(--warning-orange), #c2410c); }
+        .stat-icon.amount { background: linear-gradient(135deg, var(--primary-red), #b91c1c); }
 
         .stat-number {
             font-size: 2.5rem;
@@ -162,39 +275,39 @@ $page_title = "Dashboard Principal";
             font-weight: 600;
         }
 
-        /* MAIN CONTENT */
-        .main-content {
-            padding: 2rem 0;
-        }
-
-        .action-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 2rem;
-            margin-bottom: 2rem;
-        }
-
-        /* UPLOAD CARD */
-        .upload-card {
-            background: white;
+        /* SECTIONS */
+        .section {
+            background: var(--white);
             border-radius: 16px;
-            padding: 2.5rem;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-        }
-
-        .upload-header {
-            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
             margin-bottom: 2rem;
+            overflow: hidden;
         }
 
-        .upload-header h3 {
-            color: var(--dark-gray);
-            font-weight: 700;
-            margin-bottom: 0.5rem;
+        .section-header {
+            background: var(--primary-red);
+            color: var(--white);
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
+        .section-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .section-content {
+            padding: 2rem;
+        }
+
+        /* UPLOAD SECTION */
         .upload-zone {
-            border: 3px dashed #cbd5e1;
+            border: 3px dashed var(--border-light);
             border-radius: 12px;
             padding: 3rem 2rem;
             text-align: center;
@@ -224,6 +337,7 @@ $page_title = "Dashboard Principal";
             font-size: 1.1rem;
             color: var(--dark-gray);
             margin-bottom: 0.5rem;
+            font-weight: 600;
         }
 
         .upload-subtext {
@@ -235,60 +349,85 @@ $page_title = "Dashboard Principal";
             display: none;
         }
 
-        .upload-btn {
-            background: var(--primary-red);
-            color: white;
+        /* BUTTONS */
+        .btn {
+            padding: 0.75rem 1.5rem;
             border: none;
-            padding: 0.75rem 2rem;
             border-radius: 8px;
-            font-weight: 600;
-            margin-top: 1rem;
             cursor: pointer;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
             transition: all 0.3s ease;
+            font-size: 0.95rem;
         }
 
-        .upload-btn:hover {
+        .btn-primary {
+            background: var(--primary-red);
+            color: var(--white);
+        }
+
+        .btn-primary:hover {
             background: #b91c1c;
-            transform: translateY(-2px);
+            transform: translateY(-1px);
+            color: var(--white);
+            text-decoration: none;
+        }
+
+        .btn-success {
+            background: var(--success-green);
+            color: var(--white);
+        }
+
+        .btn-success:hover {
+            background: #059669;
+            color: var(--white);
+            text-decoration: none;
+        }
+
+        .btn-secondary {
+            background: var(--text-muted);
+            color: var(--white);
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+            color: var(--white);
+            text-decoration: none;
+        }
+
+        .btn-sm {
+            padding: 0.35rem 0.75rem;
+            font-size: 0.85rem;
         }
 
         /* QUICK ACTIONS */
-        .quick-actions {
-            background: white;
-            border-radius: 16px;
-            padding: 2rem;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
         }
 
-        .quick-actions h4 {
+        .action-card {
+            background: var(--white);
+            border: 2px solid var(--border-light);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-decoration: none;
             color: var(--dark-gray);
-            font-weight: 700;
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .action-btn {
+            transition: all 0.3s ease;
             display: flex;
             align-items: center;
             gap: 1rem;
-            width: 100%;
-            padding: 1rem;
-            background: white;
-            border: 2px solid var(--border-light);
-            border-radius: 12px;
-            text-decoration: none;
-            color: var(--dark-gray);
-            font-weight: 600;
-            margin-bottom: 1rem;
-            transition: all 0.3s ease;
         }
 
-        .action-btn:hover {
+        .action-card:hover {
             border-color: var(--primary-red);
             color: var(--primary-red);
-            transform: translateX(4px);
+            transform: translateY(-2px);
+            text-decoration: none;
         }
 
         .action-icon {
@@ -300,391 +439,497 @@ $page_title = "Dashboard Principal";
             justify-content: center;
             color: white;
             font-size: 1.2rem;
-        }
-
-        .action-icon.companies { background: var(--primary-red); }
-        .action-icon.reports { background: var(--success-green); }
-        .action-icon.vouchers { background: var(--warning-yellow); }
-        .action-icon.settings { background: var(--text-muted); }
-
-        /* RECENT ACTIVITY */
-        .recent-activity {
-            background: white;
-            border-radius: 16px;
-            padding: 2rem;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-            margin-top: 2rem;
-        }
-
-        .activity-item {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            padding: 1rem;
-            border-bottom: 1px solid var(--border-light);
-        }
-
-        .activity-item:last-child {
-            border-bottom: none;
-        }
-
-        .activity-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: var(--primary-red);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
             flex-shrink: 0;
         }
 
-        .activity-content {
-            flex: 1;
-        }
+        .action-icon.companies { background: var(--info-blue); }
+        .action-icon.reports { background: var(--success-green); }
+        .action-icon.vouchers { background: var(--warning-orange); }
+        .action-icon.data { background: var(--primary-red); }
 
-        .activity-title {
+        .action-content h4 {
             font-weight: 600;
-            color: var(--dark-gray);
             margin-bottom: 0.25rem;
         }
 
-        .activity-meta {
+        .action-content p {
+            font-size: 0.85rem;
             color: var(--text-muted);
+            margin: 0;
+        }
+
+        /* RECENT ACTIVITY */
+        .recent-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .recent-table th {
+            background: var(--dark-gray);
+            color: var(--white);
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
             font-size: 0.9rem;
+        }
+
+        .recent-table td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-light);
+            vertical-align: middle;
+        }
+
+        .recent-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .file-icon {
+            width: 35px;
+            height: 35px;
+            background: var(--primary-red);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            flex-shrink: 0;
+        }
+
+        .file-details h4 {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            font-size: 0.95rem;
+        }
+
+        .file-details p {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .status-badge {
+            background: var(--success-green);
+            color: var(--white);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .metric-badge {
+            background: var(--info-blue);
+            color: var(--white);
+            padding: 0.25rem 0.6rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        /* EMPTY STATE */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: var(--border-light);
+        }
+
+        /* ALERTS */
+        .alert-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1050;
+            max-width: 400px;
+        }
+
+        .alert {
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            animation: slideIn 0.3s ease;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border-left: 4px solid var(--success-green);
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: var(--error-red);
+            border-left: 4px solid var(--error-red);
+        }
+
+        /* PROGRESS */
+        .progress-container {
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .progress {
+            width: 100%;
+            height: 8px;
+            background: var(--border-light);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--primary-red);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        /* ANIMATIONS */
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .loading {
+            animation: pulse 1.5s ease-in-out infinite;
         }
 
         /* RESPONSIVE */
         @media (max-width: 768px) {
-            .action-grid {
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .nav-links {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .main-content {
+                padding: 1rem;
+            }
+
+            .page-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 1rem;
+            }
+
+            .page-actions {
+                justify-content: center;
+            }
+
+            .stats-grid {
                 grid-template-columns: 1fr;
             }
-            
-            .stats-row .row > div {
-                margin-bottom: 1rem;
+
+            .actions-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-    <div class="dashboard-container">
-        <!-- Header -->
-        <div class="dashboard-header">
-            <div class="container">
-                <div class="welcome-section">
-                    <h1><i class="fas fa-tachometer-alt"></i> Dashboard Principal</h1>
-                    <p>Bienvenido, <?php echo htmlspecialchars($full_name ?: $username); ?> • Sistema de Gestión de Transporte</p>
+    <!-- Alert Container -->
+    <div class="alert-container" id="alertContainer"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo-section">
+                <div class="header-logo">
+                    <i class="fas fa-truck"></i>
                 </div>
+                <div class="company-info">
+                    <h1>Capital Transport LLP</h1>
+                    <p>Management Dashboard</p>
+                </div>
+            </div>
+            <div class="nav-links">
+                <a href="dashboard.php" class="nav-link active">
+                    <i class="fas fa-tachometer-alt"></i>
+                    Dashboard
+                </a>
+                <a href="view-extracted-data.php" class="nav-link">
+                    <i class="fas fa-database"></i>
+                    Data
+                </a>
+                <a href="companies.php" class="nav-link">
+                    <i class="fas fa-building"></i>
+                    Companies
+                </a>
+                <a href="reports.php" class="nav-link">
+                    <i class="fas fa-chart-bar"></i>
+                    Reports
+                </a>
+                <a href="../logout.php" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="page-header">
+            <h1 class="page-title">
+                <i class="fas fa-tachometer-alt"></i>
+                Dashboard Principal
+            </h1>
+            <div class="page-actions">
+                <button class="btn btn-secondary" onclick="refreshStats()">
+                    <i class="fas fa-sync"></i>
+                    Refresh
+                </button>
+                <a href="view-extracted-data.php" class="btn btn-primary">
+                    <i class="fas fa-database"></i>
+                    Ver Datos
+                </a>
             </div>
         </div>
 
         <!-- Stats Cards -->
-        <div class="container">
-            <div class="stats-row">
-                <div class="row">
-                    <div class="col-md-3 col-sm-6 mb-3">
-                        <div class="stat-card">
-                            <div class="stat-icon companies">
-                                <i class="fas fa-building"></i>
-                            </div>
-                            <div class="stat-number"><?php echo number_format($stats['total_companies']); ?></div>
-                            <div class="stat-label">Empresas Activas</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-sm-6 mb-3">
-                        <div class="stat-card">
-                            <div class="stat-icon vouchers">
-                                <i class="fas fa-file-invoice"></i>
-                            </div>
-                            <div class="stat-number"><?php echo number_format($stats['total_vouchers']); ?></div>
-                            <div class="stat-label">Vouchers Procesados</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-sm-6 mb-3">
-                        <div class="stat-card">
-                            <div class="stat-icon trips">
-                                <i class="fas fa-truck"></i>
-                            </div>
-                            <div class="stat-number"><?php echo number_format($stats['total_trips']); ?></div>
-                            <div class="stat-label">Viajes Registrados</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-sm-6 mb-3">
-                        <div class="stat-card">
-                            <div class="stat-icon amount">
-                                <i class="fas fa-dollar-sign"></i>
-                            </div>
-                            <div class="stat-number">$<?php echo number_format($stats['this_month']); ?></div>
-                            <div class="stat-label">Este Mes</div>
-                        </div>
-                    </div>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon companies">
+                    <i class="fas fa-building"></i>
                 </div>
+                <div class="stat-number" id="totalCompanies"><?php echo number_format($stats['total_companies']); ?></div>
+                <div class="stat-label">Empresas Activas</div>
             </div>
-
-            <!-- Main Content -->
-            <div class="main-content">
-                <div class="action-grid">
-                    <!-- Upload Section -->
-                    <div class="upload-card">
-                        <div class="upload-header">
-                            <h3><i class="fas fa-cloud-upload-alt"></i> Subir Voucher Martin Marieta</h3>
-                            <p class="text-muted">Arrastra tu archivo PDF o haz clic para seleccionar</p>
-                        </div>
-                        
-                        <form id="uploadForm" enctype="multipart/form-data">
-                            <div class="upload-zone" id="uploadZone">
-                                <div class="upload-icon">
-                                    <i class="fas fa-file-pdf"></i>
-                                </div>
-                                <div class="upload-text">Arrastra tu archivo PDF aquí</div>
-                                <div class="upload-subtext">o haz clic para seleccionar</div>
-                                <input type="file" id="fileInput" name="voucher_file" class="file-input" accept=".pdf" required>
-                                <button type="button" class="upload-btn" onclick="document.getElementById('fileInput').click()">
-                                    <i class="fas fa-folder-open"></i> Seleccionar Archivo
-                                </button>
-                            </div>
-                            
-                            <div id="uploadProgress" class="mt-3" style="display: none;">
-                                <div class="progress">
-                                    <div class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
-                                </div>
-                                <div class="text-center mt-2">
-                                    <small class="text-muted">Subiendo archivo...</small>
-                                </div>
-                            </div>
-                            
-                            <div id="uploadResult" class="mt-3"></div>
-                        </form>
-                    </div>
-
-                    <!-- Quick Actions -->
-                    <div class="quick-actions">
-                        <h4><i class="fas fa-bolt"></i> Acciones Rápidas</h4>
-                        
-                        <a href="companies.php" class="action-btn">
-                            <div class="action-icon companies">
-                                <i class="fas fa-building"></i>
-                            </div>
-                            <div>
-                                <div>Gestionar Empresas</div>
-                                <small class="text-muted">Crear y editar empresas</small>
-                            </div>
-                        </a>
-                        
-                        <a href="reports.php" class="action-btn">
-                            <div class="action-icon reports">
-                                <i class="fas fa-chart-line"></i>
-                            </div>
-                            <div>
-                                <div>Generar Reportes</div>
-                                <small class="text-muted">Capital Transport reports</small>
-                            </div>
-                        </a>
-                        
-                        <a href="vouchers.php" class="action-btn">
-                            <div class="action-icon vouchers">
-                                <i class="fas fa-file-invoice-dollar"></i>
-                            </div>
-                            <div>
-                                <div>Ver Vouchers</div>
-                                <small class="text-muted">Historial y gestión</small>
-                            </div>
-                        </a>
-                        
-                        <?php if ($is_admin): ?>
-                        <a href="settings.php" class="action-btn">
-                            <div class="action-icon settings">
-                                <i class="fas fa-cog"></i>
-                            </div>
-                            <div>
-                                <div>Configuración</div>
-                                <small class="text-muted">Ajustes del sistema</small>
-                            </div>
-                        </a>
-                        <?php endif; ?>
-                    </div>
+            <div class="stat-card">
+                <div class="stat-icon vouchers">
+                    <i class="fas fa-file-invoice"></i>
                 </div>
-
-                <!-- Recent Activity -->
-                <?php if (!empty($recent_vouchers)): ?>
-                <div class="recent-activity">
-                    <h4><i class="fas fa-history"></i> Últimos Vouchers Procesados</h4>
-                    
-                    <?php foreach ($recent_vouchers as $voucher): ?>
-                    <div class="activity-item">
-                        <div class="activity-icon">
-                            <i class="fas fa-file-check"></i>
-                        </div>
-                        <div class="activity-content">
-                            <div class="activity-title">
-                                <?php echo htmlspecialchars($voucher['original_filename']); ?>
-                            </div>
-                            <div class="activity-meta">
-                                <i class="fas fa-calendar"></i> <?php echo $voucher['formatted_date']; ?> • 
-                                <i class="fas fa-truck"></i> <?php echo $voucher['trip_count']; ?> viajes • 
-                                <i class="fas fa-dollar-sign"></i> $<?php echo number_format($voucher['total_value'] ?? 0, 2); ?>
-                            </div>
-                        </div>
-                        <div>
-                            <a href="view-data.php?id=<?php echo $voucher['id']; ?>" class="btn btn-sm btn-outline-primary">
-                                <i class="fas fa-eye"></i> Ver
-                            </a>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
+                <div class="stat-number" id="totalVouchers"><?php echo number_format($stats['total_vouchers']); ?></div>
+                <div class="stat-label">Vouchers Subidos</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon trips">
+                    <i class="fas fa-truck"></i>
                 </div>
-                <?php endif; ?>
+                <div class="stat-number" id="totalTrips"><?php echo number_format($stats['total_trips']); ?></div>
+                <div class="stat-label">Viajes Extraídos</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon amount">
+                    <i class="fas fa-dollar-sign"></i>
+                </div>
+                <div class="stat-number" id="totalAmount">$<?php echo number_format($stats['total_amount']); ?></div>
+                <div class="stat-label">Total Procesado</div>
+            </div>
+        </div>
 
-                <!-- Pending Items Alert -->
+        <!-- Upload Section -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    Subir Voucher Martin Marieta
+                </div>
                 <?php if ($stats['pending_vouchers'] > 0): ?>
-                <div class="alert alert-warning mt-3" role="alert">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <strong>Atención:</strong> Tienes <?php echo $stats['pending_vouchers']; ?> voucher(s) pendiente(s) de procesar.
-                    <a href="process.php" class="alert-link">Procesar ahora</a>
+                <div style="background: var(--warning-orange); color: var(--white); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: 600;">
+                    <?php echo $stats['pending_vouchers']; ?> pendientes
                 </div>
                 <?php endif; ?>
             </div>
-        </div>
-    </div>
-
-    <!-- Toast Container -->
-    <div class="toast-container position-fixed top-0 end-0 p-3">
-        <div id="uploadToast" class="toast" role="alert">
-            <div class="toast-header">
-                <strong class="me-auto">Upload Status</strong>
-                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">
-                <!-- Mensaje dinámico -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const uploadZone = document.getElementById('uploadZone');
-            const fileInput = document.getElementById('fileInput');
-            const uploadForm = document.getElementById('uploadForm');
-            const uploadProgress = document.getElementById('uploadProgress');
-            const uploadResult = document.getElementById('uploadResult');
-
-            // Upload zone click handler
-            uploadZone.addEventListener('click', function(e) {
-                if (e.target.type !== 'file') {
-                    fileInput.click();
-                }
-            });
-
-            // Drag and drop handlers
-            uploadZone.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                uploadZone.classList.add('dragover');
-            });
-
-            uploadZone.addEventListener('dragleave', function(e) {
-                e.preventDefault();
-                uploadZone.classList.remove('dragover');
-            });
-
-            uploadZone.addEventListener('drop', function(e) {
-                e.preventDefault();
-                uploadZone.classList.remove('dragover');
-                
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    fileInput.files = files;
-                    handleFileUpload(files[0]);
-                }
-            });
-
-            // File input change handler
-            fileInput.addEventListener('change', function(e) {
-                if (e.target.files.length > 0) {
-                    handleFileUpload(e.target.files[0]);
-                }
-            });
-
-            function handleFileUpload(file) {
-                // Validar tipo de archivo
-                if (!file.type.includes('pdf')) {
-                    showToast('Error: Solo se permiten archivos PDF', 'error');
-                    return;
-                }
-
-                // Validar tamaño (max 20MB)
-                if (file.size > 20 * 1024 * 1024) {
-                    showToast('Error: El archivo es demasiado grande (máximo 20MB)', 'error');
-                    return;
-                }
-
-                const formData = new FormData();
-                formData.append('voucher_file', file);
-
-                // Mostrar progreso
-                uploadProgress.style.display = 'block';
-                uploadResult.innerHTML = '';
-
-                // Realizar upload
-                fetch('../api/upload-file.php', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    uploadProgress.style.display = 'none';
+            <div class="section-content">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="upload-zone" id="uploadZone">
+                        <div class="upload-icon">
+                            <i class="fas fa-file-pdf"></i>
+                        </div>
+                        <div class="upload-text">Arrastra tu archivo PDF aquí</div>
+                        <div class="upload-subtext">o haz clic para seleccionar (máx 20MB)</div>
+                        <input type="file" id="fileInput" name="voucher_file" class="file-input" accept=".pdf" required>
+                    </div>
                     
-                    if (data.success) {
-                        showToast(`Archivo subido exitosamente: ${file.name}`, 'success');
-                        uploadResult.innerHTML = `
-                            <div class="alert alert-success">
-                                <i class="fas fa-check-circle"></i>
-                                <strong>¡Éxito!</strong> Archivo subido correctamente.
-                                <a href="process.php?voucher_id=${data.voucher_id}" class="alert-link">Procesar ahora</a>
-                            </div>
-                        `;
-                        
-                        // Limpiar input
-                        fileInput.value = '';
-                        
-                        // Actualizar stats después de 2 segundos
-                        setTimeout(() => {
-                            location.reload();
-                        }, 2000);
-                    } else {
-                        showToast(`Error: ${data.message}`, 'error');
-                        uploadResult.innerHTML = `
-                            <div class="alert alert-danger">
-                                <i class="fas fa-exclamation-triangle"></i>
-                                <strong>Error:</strong> ${data.message}
-                            </div>
-                        `;
-                    }
-                })
-                .catch(error => {
-                    uploadProgress.style.display = 'none';
-                    showToast('Error de conexión', 'error');
-                    console.error('Upload error:', error);
-                });
-            }
+                    <div id="progressContainer" class="progress-container">
+                        <div class="progress">
+                            <div class="progress-bar" id="progressBar"></div>
+                        </div>
+                        <div class="progress-text" id="progressText">Subiendo archivo...</div>
+                    </div>
+                </form>
+            </div>
+        </div>
 
-            function showToast(message, type = 'info') {
-                const toast = document.getElementById('uploadToast');
-                const toastBody = toast.querySelector('.toast-body');
-                
-                toastBody.innerHTML = `
-                    <i class="fas fa-${type === 'success' ? 'check-circle text-success' : 'exclamation-triangle text-danger'}"></i>
-                    ${message}
-                `;
-                
-                const bsToast = new bootstrap.Toast(toast);
-                bsToast.show();
-            }
-        });
-    </script>
-</body>
-</html>
+        <!-- Quick Actions -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fas fa-bolt"></i>
+                    Acciones Rápidas
+                </div>
+            </div>
+            <div class="section-content">
+                <div class="actions-grid">
+                    <a href="view-extracted-data.php" class="action-card">
+                        <div class="action-icon data">
+                            <i class="fas fa-database"></i>
+                        </div>
+                        <div class="action-content">
+                            <h4>Ver Datos Extraídos</h4>
+                            <p>Revisar y procesar vouchers</p>
+                        </div>
+                    </a>
+                    
+                    <a href="companies.php" class="action-card">
+                        <div class="action-icon companies">
+                            <i class="fas fa-building"></i>
+                        </div>
+                        <div class="action-content">
+                            <h4>Gestionar Empresas</h4>
+                            <p>Crear y editar empresas</p>
+                        </div>
+                    </a>
+                    
+                    <a href="reports.php" class="action-card">
+                        <div class="action-icon reports">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="action-content">
+                            <h4>Generar Reportes</h4>
+                            <p>Capital Transport reports</p>
+                        </div>
+                    </a>
+                    
+                    <a href="vouchers.php" class="action-card">
+                        <div class="action-icon vouchers">
+                            <i class="fas fa-file-invoice-dollar"></i>
+                        </div>
+                        <div class="action-content">
+                            <h4>Historial Vouchers</h4>
+                            <p>Ver todos los vouchers</p>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <?php if (!empty($recent_vouchers)): ?>
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fas fa-history"></i>
+                    Últimos Vouchers Procesados
+                </div>
+                <div style="background: var(--white); color: var(--primary-red); padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600;">
+                    <?php echo count($recent_vouchers); ?> recientes
+                </div>
+            </div>
+            <div class="section-content">
+                <table class="recent-table">
+                    <thead>
+                        <tr>
+                            <th>Archivo</th>
+                            <th>Estado</th>
+                            <th>Viajes</th>
+                            <th>Total</th>
+                            <th>Subido por</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($recent_vouchers as $voucher): ?>
+                        <tr>
+                            <td>
+                                <div class="file-info">
+                                    <div class="file-icon">
+                                        <i class="fas fa-file-pdf"></i>
+                                    </div>
+                                    <div class="file-details">
+                                        <h4><?php echo htmlspecialchars($voucher['voucher_number']); ?></h4>
+                                        <p><?php echo htmlspecialchars($voucher['original_filename']); ?></p>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="status-badge">Procesado</span>
+                            </td>
+                            <td>
+                                <span class="metric-badge"><?php echo $voucher['trip_count']; ?> viajes</span>
+                            </td>
+                            <td>
+                                <strong>$<?php echo number_format($voucher['total_value'] ?? 0, 2); ?></strong>
+                            </td>
+                            <td>
+                                <?php echo htmlspecialchars($voucher['uploaded_by_name']); ?>
+                                <br><small style="color: var(--text-muted);"><?php echo date('d/m/Y', strtotime($voucher['upload_date'])); ?></small>
+                            </td>
+                            <td>
+                                <a href="view-extracted-data.php?voucher=<?php echo $voucher['id']; ?>" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-eye"></i>
+                                    Ver
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- No Data State -->
+        <?php if (empty($recent_vouchers)): ?>
+        <div class="section">
+            <div class="section-content">
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <h3>No hay vouchers procesados</h3>
+                    <p>Sube tu primer archivo PDF para comenzar</p>
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                        <i class="fas fa-plus"></i>
+                        Subir Archivo
+                    </button>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Pending Vouchers Alert -->
+        <?php if ($stats['pending_vouchers'] > 0): ?>
+        <div class="section">
+            <div class="section-content">
+                <div style="background: linear-gradient(135deg, var(--warning-orange), #ea580c); color: var(--white); padding: 1.5rem; border-radius: 12px; text-align: center;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+                    <h3 style="margin-bottom: 0.5rem;">Atención: Vouchers Pendientes</h3>
+                    <p style="margin-bottom: 1.5rem;">Tienes <?php echo $stats['pending_vouchers']; ?> voucher(s) pendiente(s) de procesar</p>
+                    <a href="view-extracted-data.php" class="btn" style="background: var(--white); color: var(--warning-orange); font-weight: 600;">
+                        <i class="fas fa-cog"></i>
+                        Procesar Ahora
+                    </a>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
