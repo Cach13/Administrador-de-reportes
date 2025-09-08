@@ -1,6 +1,6 @@
 <?php
 /**
- * API para generar reportes Capital Transport usando CapitalTransportReportGenerator
+ * API para generar reportes Capital Transport - SOLO PDF
  * Ruta: /api/generate-capital-report.php
  */
 
@@ -25,7 +25,7 @@ try {
     // Obtener parámetros
     $voucher_id = $_POST['voucher_id'] ?? null;
     $company_id = $_POST['company_id'] ?? null;
-    $format = $_POST['format'] ?? 'pdf';
+    $format = $_POST['format'] ?? 'pdf'; // Solo PDF ahora
     $action = $_POST['action'] ?? 'generate';
     
     // Fechas (usar las del POST o calcular automáticamente)
@@ -67,7 +67,7 @@ try {
         throw new Exception('No se encontraron viajes para esta empresa en este voucher');
     }
     
-    // Crear generador usando tu clase existente
+    // Crear generador usando la clase actualizada
     $generator = new CapitalTransportReportGenerator($company_id, $voucher_id);
     
     // Validar antes de generar
@@ -117,13 +117,8 @@ try {
         $file_path = $report['file_path'];
         $filename = basename($file_path);
         
-        // Headers para descarga
-        if (strpos($filename, '.pdf') !== false) {
-            header('Content-Type: application/pdf');
-        } else {
-            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        }
-        
+        // Headers para descarga PDF
+        header('Content-Type: application/pdf');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Content-Length: ' . filesize($file_path));
         header('Cache-Control: private, max-age=0, must-revalidate');
@@ -133,9 +128,7 @@ try {
         exit;
         
     } else {
-        // GENERAR NUEVO REPORTE
-        
-        // Usar tu CapitalTransportReportGenerator existente
+        // GENERAR NUEVO REPORTE PDF
         $result = $generator->generateReport(
             $week_start,
             $week_end, 
@@ -147,32 +140,24 @@ try {
             throw new Exception('Error en la generación del reporte: ' . ($result['message'] ?? 'Error desconocido'));
         }
         
-        // Determinar qué archivo devolver según el formato solicitado
-        $file_info = null;
-        if ($format === 'excel' && isset($result['files']['excel'])) {
-            $file_info = $result['files']['excel'];
-        } elseif ($format === 'pdf' && isset($result['files']['pdf'])) {
-            $file_info = $result['files']['pdf'];
-        } else {
-            // Fallback al primer archivo disponible
-            $file_info = reset($result['files']);
-        }
+        // Obtener información del archivo PDF generado
+        $pdf_file = $result['pdf_file'];
         
-        if (!$file_info || !file_exists($file_info['file_path'])) {
-            throw new Exception('No se pudo generar el archivo ' . strtoupper($format));
+        if (!$pdf_file || !file_exists($pdf_file['file_path'])) {
+            throw new Exception('No se pudo generar el archivo PDF');
         }
         
         // Respuesta exitosa
         echo json_encode([
             'success' => true,
-            'message' => 'Reporte generado exitosamente',
+            'message' => 'Reporte PDF generado exitosamente',
             'data' => [
                 'report_id' => $result['report_id'],
                 'payment_no' => $result['payment_no'],
-                'filename' => $file_info['filename'],
-                'file_path' => $file_info['file_path'],
-                'file_size' => $file_info['file_size'],
-                'format' => $format,
+                'filename' => $pdf_file['filename'],
+                'file_path' => $pdf_file['file_path'],
+                'file_size' => $pdf_file['file_size'],
+                'format' => 'pdf',
                 'download_url' => "api/generate-capital-report.php?action=download&voucher_id={$voucher_id}&company_id={$company_id}",
                 'direct_download' => "download-report.php?id={$result['report_id']}",
                 'capital_data' => $result['capital_data'],
@@ -193,4 +178,3 @@ try {
 }
 
 exit;
-?>

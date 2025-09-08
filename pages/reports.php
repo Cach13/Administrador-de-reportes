@@ -815,7 +815,7 @@ $page_title = "Generar Reportes";
         </div>
         <?php endif; ?>
 
-        <!-- Recent Reports -->
+       <!-- Recent Reports -->
         <?php if (!empty($recent_reports)): ?>
         <div class="section">
             <div class="section-header">
@@ -866,14 +866,16 @@ $page_title = "Generar Reportes";
                                 <br><small style="color: var(--text-muted);"><?php echo htmlspecialchars($report['generated_by_name']); ?></small>
                             </td>
                             <td>
-                                <?php if ($report['file_path'] && file_exists($report['file_path'])): ?>
-                                    <a href="download-report.php?id=<?php echo $report['id']; ?>" class="btn btn-primary btn-sm">
-                                        <i class="fas fa-download"></i>
-                                        Descargar
+                                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                                    <a href="download-report.php?id=<?php echo $report['id']; ?>&format=pdf" class="btn btn-danger btn-sm">
+                                        <i class="fas fa-file-pdf"></i>
+                                        PDF
                                     </a>
-                                <?php else: ?>
-                                    <span style="color: var(--text-muted); font-size: 0.8rem;">No disponible</span>
-                                <?php endif; ?>
+                                    <a href="download-report.php?id=<?php echo $report['id']; ?>&format=excel" class="btn btn-success btn-sm">
+                                        <i class="fas fa-file-excel"></i>
+                                        Excel
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -940,9 +942,9 @@ $page_title = "Generar Reportes";
                 if (data.success) {
                     showAlert('success', `Reporte ${format.toUpperCase()} generado exitosamente`);
                     
-                    // Descargar automáticamente
-                    if (data.data.download_url) {
-                        window.open(data.data.download_url, '_blank');
+                    // Descargar automáticamente con formato correcto
+                    if (data.data.report_id) {
+                        window.open(`download-report.php?id=${data.data.report_id}&format=${format}`, '_blank');
                     }
                     
                     // Actualizar página después de un momento

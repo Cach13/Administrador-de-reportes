@@ -1,7 +1,7 @@
 <?php
 /**
- * Generador de reportes Capital Transport LLP Payment Information
- * VERSIÓN LIMPIA Y COMPLETA
+ * Generador de reportes Capital Transport LLP Payment Information - SOLO PDF
+ * VERSIÓN SIMPLIFICADA SIN EXCEL - SOLO GENERACIÓN DE PDF
  * Ruta: /classes/CapitalTransportReportGenerator.php
  */
 
@@ -9,12 +9,6 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Logger.php';
-
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 
 class CapitalTransportReportGenerator {
     
@@ -56,7 +50,7 @@ class CapitalTransportReportGenerator {
         $this->trips_data = $this->db->fetchAll(
             "SELECT * FROM trips 
              WHERE voucher_id = ? AND company_id = ? 
-             ORDER BY vehicle_number ASC, trip_date ASC",
+             ORDER BY trip_date ASC, ticket_number ASC",
             [$this->voucher_id, $this->company_id]
         );
         
@@ -66,7 +60,7 @@ class CapitalTransportReportGenerator {
     }
     
     /**
-     * Generar reporte completo Capital Transport
+     * Generar reporte PDF Capital Transport
      */
     public function generateReport($week_start, $week_end, $payment_date = null, $ytd_amount = 0) {
         try {
@@ -93,16 +87,14 @@ class CapitalTransportReportGenerator {
             // Guardar en BD
             $report_id = $this->saveReportToDB($capital_data, $financial_data);
             
-            // Generar archivos
-            $files_generated = [];
-            $files_generated['excel'] = $this->generateExcelReport($report_id, $capital_data);
-            $files_generated['pdf'] = $this->generatePDFReport($report_id, $capital_data);
+            // Generar SOLO archivo PDF
+            $pdf_file = $this->generatePDFReport($report_id, $capital_data);
             
             // Actualizar Payment No de la empresa
             $this->updateCompanyPaymentNo($payment_no);
             
             $this->logger->log(null, 'REPORT_GENERATED', 
-                "Capital Transport report generated - Company: {$this->company_info['name']}, Payment No: {$payment_no}");
+                "Capital Transport PDF report generated - Company: {$this->company_info['name']}, Payment No: {$payment_no}");
             
             return [
                 'success' => true,
@@ -110,12 +102,12 @@ class CapitalTransportReportGenerator {
                 'payment_no' => $payment_no,
                 'capital_data' => $capital_data,
                 'financial_data' => $financial_data,
-                'files' => $files_generated,
+                'pdf_file' => $pdf_file,
                 'trips_count' => count($this->trips_data)
             ];
             
         } catch (Exception $e) {
-            $this->logger->log(null, 'REPORT_ERROR', "Error generating report: " . $e->getMessage());
+            $this->logger->log(null, 'REPORT_ERROR', "Error generating PDF report: " . $e->getMessage());
             throw $e;
         }
     }
@@ -192,91 +184,127 @@ class CapitalTransportReportGenerator {
     }
     
     /**
-     * Generar reporte Excel
+     * Generar reporte PDF - FORMATO EXACTO CON TÉRMINOS ACTUALIZADOS
      */
-    private function generateExcelReport($report_id, $capital_data) {
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
+    private function generatePDFReport($report_id, $capital_data) {
+        require_once __DIR__ . '/../vendor/tecnickcom/tcpdf/tcpdf.php';
         
-        // HEADER - CAPITAL TRANSPORT LLP PAYMENT INFORMATION
-        $sheet->setCellValue('A1', 'CAPITAL TRANSPORT LLP PAYMENT INFORMATION');
-        $sheet->mergeCells('A1:G1');
-        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
-        $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
         
-        // Información de pago
-        $current_row = 3;
-        $sheet->setCellValue("A{$current_row}", "Payment No:");
-        $sheet->setCellValue("B{$current_row}", $capital_data['payment_no']);
-        $current_row++;
+        // Configurar documento
+        $pdf->SetCreator('Capital Transport LLP');
+        $pdf->SetTitle('Payment Information - Payment No. ' . $capital_data['payment_no']);
+        $pdf->SetSubject('Capital Transport Payment Report');
         
-        $sheet->setCellValue("A{$current_row}", "Week Start:");
-        $sheet->setCellValue("B{$current_row}", date('m/d/Y', strtotime($capital_data['week_start'])));
-        $current_row++;
+        // Eliminar header y footer por defecto
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
         
-        $sheet->setCellValue("A{$current_row}", "Week End:");
-        $sheet->setCellValue("B{$current_row}", date('m/d/Y', strtotime($capital_data['week_end'])));
-        $current_row++;
+        // Configurar márgenes
+        $pdf->SetMargins(20, 20, 20);
+        $pdf->SetAutoPageBreak(TRUE, 25);
         
-        $sheet->setCellValue("A{$current_row}", "Payment Date:");
-        $sheet->setCellValue("B{$current_row}", date('m/d/Y', strtotime($capital_data['payment_date'])));
-        $current_row++;
+        // ====================================
+        // PÁGINA 1: INFORMACIÓN DE PAGO
+        // ====================================
         
-        $sheet->setCellValue("A{$current_row}", "Payment Total:");
-        $sheet->setCellValue("B{$current_row}", '$' . number_format($capital_data['payment_total'], 2));
-        $current_row++;
+        $pdf->AddPage();
         
-        $sheet->setCellValue("A{$current_row}", "YTD:");
-        $sheet->setCellValue("B{$current_row}", '$' . number_format($capital_data['ytd_amount'], 2));
-        $current_row += 2;
+        // HEADER - "Thank you!" (top left)
+        $pdf->SetFont('helvetica', 'B', 14);
+        $pdf->Cell(0, 10, 'Thank you!', 0, 1, 'L');
+        $pdf->Ln(5);
         
-        // HEADERS DE DATOS
-        $headers = ['Invoice Date', 'Location', 'Ticket Number', 'Rate', 'Quantity/TON', 'Amount', 'Vehicle ID'];
-        $col = 'A';
-        foreach ($headers as $header) {
-            $sheet->setCellValue($col . $current_row, $header);
-            $sheet->getStyle($col . $current_row)->getFont()->setBold(true);
-            $col++;
-        }
-        $current_row++;
+        // TÍTULO PRINCIPAL (centrado)
+        $pdf->SetFont('helvetica', 'B', 18);
+        $pdf->Cell(0, 10, 'CAPITAL TRANSPORT LLP', 0, 1, 'C');
+        $pdf->SetFont('helvetica', '', 12);
+        $pdf->Cell(0, 8, 'PAYMENT INFORMATION', 0, 1, 'C');
+        $pdf->Ln(10);
         
-        // DATOS DE TRIPS (mapeados desde Martin Marieta)
-        foreach ($this->trips_data as $trip) {
-            $sheet->setCellValue('A' . $current_row, date('m/d/Y', strtotime($trip['trip_date']))); // Ship Date → Invoice Date
-            $sheet->setCellValue('B' . $current_row, $trip['location']);                           // Location → Location
-            $sheet->setCellValue('C' . $current_row, $trip['ticket_number']);                     // Ticket Number → Ticket Number
-            $sheet->setCellValue('D' . $current_row, '$' . number_format($trip['haul_rate'], 2)); // Haul Rate → Rate
-            $sheet->setCellValue('E' . $current_row, number_format($trip['quantity'], 2));        // Quantity → Quantity/TON
-            $sheet->setCellValue('F' . $current_row, '$' . number_format($trip['amount'], 2));    // Amount → Amount
-            $sheet->setCellValue('G' . $current_row, $trip['vehicle_number']);                    // Vehicle Number → Vehicle ID
-            
-            $current_row++;
-        }
+        // NOMBRE DE LA EMPRESA (centrado)
+        $pdf->SetFont('helvetica', 'B', 14);
+        $pdf->Cell(0, 10, strtoupper($this->company_info['name']), 0, 1, 'C');
+        $pdf->Ln(5);
         
-        $current_row++;
+        // ====================================
+        // INFORMACIÓN DEL PAGO - ALINEADA A LA IZQUIERDA
+        // ====================================
+        $pdf->SetFont('helvetica', '', 12);
         
-        // TOTALES FINALES
-        $sheet->setCellValue("E{$current_row}", "SUBTOTAL");
-        $sheet->setCellValue("F{$current_row}", '$' . number_format($capital_data['subtotal'], 2));
-        $sheet->getStyle("E{$current_row}:F{$current_row}")->getFont()->setBold(true);
-        $current_row++;
+        // Payment No
+        $pdf->Cell(0, 8, 'Payment No: ' . $capital_data['payment_no'], 0, 1, 'L');
         
-        $sheet->setCellValue("E{$current_row}", "CAPITAL'S {$capital_data['capital_percentage']}%");
-        $sheet->setCellValue("F{$current_row}", '$' . number_format($capital_data['capital_deduction'], 2));
-        $sheet->getStyle("E{$current_row}:F{$current_row}")->getFont()->setBold(true);
-        $current_row++;
+        // Week Start
+        $pdf->Cell(0, 8, 'Week Start: ' . date('m/d/Y', strtotime($capital_data['week_start'])), 0, 1, 'L');
         
-        $sheet->setCellValue("E{$current_row}", "TOTAL PAYMENT");
-        $sheet->setCellValue("F{$current_row}", '$' . number_format($capital_data['total_payment'], 2));
-        $sheet->getStyle("E{$current_row}:F{$current_row}")->getFont()->setBold(true);
+        // Week End
+        $pdf->Cell(0, 8, 'Week End: ' . date('m/d/Y', strtotime($capital_data['week_end'])), 0, 1, 'L');
         
-        // Ajustar anchos de columna
-        foreach (range('A', 'G') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
+        // Payment Date
+        $pdf->Cell(0, 8, 'Payment Date: ' . date('m/d/Y', strtotime($capital_data['payment_date'])), 0, 1, 'L');
         
-        // Guardar archivo Excel
-        $filename = "Capital_Transport_Payment_{$capital_data['payment_no']}_" . date('Y-m-d') . ".xlsx";
+        // Payment Total
+        $pdf->Cell(0, 8, 'Payment Total: $ ' . number_format($capital_data['payment_total'], 2), 0, 1, 'L');
+        
+        // YTD
+        $pdf->Cell(0, 8, 'YTD: $ ' . number_format($capital_data['ytd_amount'], 2), 0, 1, 'L');
+        
+        $pdf->Ln(10);
+        
+        // TABLA DE TRIPS CON PAGINACIÓN AUTOMÁTICA Y COLORES
+        $this->createTripsTableWithPagination($pdf, $this->trips_data, $capital_data);
+        
+        // ====================================
+        // ÚLTIMA PÁGINA: TÉRMINOS Y CONDICIONES ACTUALIZADOS
+        // ====================================
+        
+        $pdf->AddPage();
+        
+        // "Thank you!" centrado - MÁS GRANDE Y EN NEGRITA
+        $pdf->SetFont('helvetica', 'B', 18);
+        $pdf->Cell(0, 15, 'Thank you!', 0, 1, 'C');
+        $pdf->Ln(20);
+        
+        // TEXTO DE TÉRMINOS ACTUALIZADO - CENTRADO
+        $pdf->SetFont('helvetica', '', 12);
+        $terms_text = "Please confirm receipt. If there is a claim, it must be within the next 72 hours, otherwise it will no longer be possible to make any adjustment.";
+        
+        $pdf->MultiCell(0, 8, $terms_text, 0, 'C');
+        $pdf->Ln(10);
+        
+        // INFORMACIÓN DE CONTACTO ACTUALIZADA - LÍNEA POR LÍNEA CENTRADA
+        $pdf->SetFont('helvetica', '', 12);
+        $pdf->SetTextColor(0, 0, 0); // Negro
+        
+        // Primera parte del texto
+        $contact_line1 = "For any inquiries, please send email to ";
+        $email = "info@capitaltransportllp.com";
+        $contact_line2 = " or call 720-319-4201";
+        
+        // Construir línea completa para centrar
+        $full_contact_line = $contact_line1 . $email . $contact_line2;
+        
+        // Calcular posición centrada
+        $pdf->SetXY(20, $pdf->GetY());
+        
+        // Escribir primera parte
+        $pdf->Write(8, $contact_line1);
+        
+        // Email con estilo de enlace (color azul #0462C0 y subrayado)
+        $pdf->SetTextColor(4, 98, 192); // #0462C0 en RGB
+        $pdf->SetFont('helvetica', 'U', 12); // Underlined (subrayado)
+        $pdf->Write(8, $email);
+        
+        // Restaurar color y fuente normal para el resto
+        $pdf->SetTextColor(0, 0, 0); // Negro
+        $pdf->SetFont('helvetica', '', 12); // Normal
+        $pdf->Write(8, $contact_line2);
+        
+        $pdf->Ln(15); // Más espacio al final
+        
+        // Guardar archivo PDF
+        $filename = "Capital_Transport_Payment_{$capital_data['payment_no']}_" . date('Y-m-d', strtotime($capital_data['payment_date'])) . ".pdf";
         $file_path = REPORTS_PATH . $filename;
         
         // Crear directorio si no existe
@@ -284,8 +312,7 @@ class CapitalTransportReportGenerator {
             mkdir(REPORTS_PATH, 0755, true);
         }
         
-        $writer = new Xlsx($spreadsheet);
-        $writer->save($file_path);
+        $pdf->Output($file_path, 'F');
         
         // Actualizar ruta en BD
         $this->db->update('reports', ['file_path' => $file_path], 'id = ?', [$report_id]);
@@ -298,119 +325,125 @@ class CapitalTransportReportGenerator {
     }
     
     /**
-     * Generar reporte PDF
+     * Crear tabla de trips con paginación automática y formato exacto con colores
      */
-    private function generatePDFReport($report_id, $capital_data) {
-        require_once __DIR__ . '/../vendor/tecnickcom/tcpdf/tcpdf.php';
+    private function createTripsTableWithPagination($pdf, $trips, $capital_data) {
+        $widths = [25, 20, 25, 25, 20, 25, 25]; // Anchos de columnas
+        $row_height = 7;
+        $header_height = 8;
+        $trips_per_page = 20; // Reducido para dejar espacio para totales
         
-        $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+        // Dividir trips en páginas
+        $total_trips = count($trips);
+        $pages_needed = ceil($total_trips / $trips_per_page);
+        $current_trip_index = 0;
         
-        // Configurar documento
-        $pdf->SetCreator('Capital Transport LLP');
-        $pdf->SetTitle('Payment Information - Payment No. ' . $capital_data['payment_no']);
-        $pdf->SetSubject('Transport Payment Report');
-        
-        // Configurar página
-        $pdf->SetDefaultMonospacedFont(PDF_FONT_MONOSPACED);
-        $pdf->SetMargins(15, 20, 15);
-        $pdf->SetAutoPageBreak(TRUE, 20);
-        
-        // Agregar página
-        $pdf->AddPage();
-        
-        // HEADER
-        $pdf->SetFont('helvetica', 'B', 18);
-        $pdf->Cell(0, 10, 'CAPITAL TRANSPORT LLP PAYMENT INFORMATION', 0, 1, 'C');
-        $pdf->Ln(5);
-        
-        // Información de pago
-        $pdf->SetFont('helvetica', '', 12);
-        $pdf->Cell(40, 6, 'Payment No:', 0, 0, 'L');
-        $pdf->Cell(40, 6, $capital_data['payment_no'], 0, 1, 'L');
-        
-        $pdf->Cell(40, 6, 'Week Start:', 0, 0, 'L');
-        $pdf->Cell(40, 6, date('m/d/Y', strtotime($capital_data['week_start'])), 0, 1, 'L');
-        
-        $pdf->Cell(40, 6, 'Week End:', 0, 0, 'L');
-        $pdf->Cell(40, 6, date('m/d/Y', strtotime($capital_data['week_end'])), 0, 1, 'L');
-        
-        $pdf->Cell(40, 6, 'Payment Date:', 0, 0, 'L');
-        $pdf->Cell(40, 6, date('m/d/Y', strtotime($capital_data['payment_date'])), 0, 1, 'L');
-        
-        $pdf->Cell(40, 6, 'Payment Total:', 0, 0, 'L');
-        $pdf->Cell(40, 6, '$' . number_format($capital_data['payment_total'], 2), 0, 1, 'L');
-        
-        $pdf->Cell(40, 6, 'YTD:', 0, 0, 'L');
-        $pdf->Cell(40, 6, '$' . number_format($capital_data['ytd_amount'], 2), 0, 1, 'L');
-        
-        $pdf->Ln(10);
-        
-        // TABLA DE DATOS
-        $pdf->SetFont('helvetica', 'B', 10);
-        
-        // Headers
-        $pdf->Cell(25, 8, 'Invoice Date', 1, 0, 'C');
-        $pdf->Cell(30, 8, 'Location', 1, 0, 'C');
-        $pdf->Cell(25, 8, 'Ticket Number', 1, 0, 'C');
-        $pdf->Cell(20, 8, 'Rate', 1, 0, 'C');
-        $pdf->Cell(20, 8, 'Quantity/TON', 1, 0, 'C');
-        $pdf->Cell(25, 8, 'Amount', 1, 0, 'C');
-        $pdf->Cell(25, 8, 'Vehicle ID', 1, 1, 'C');
-        
-        // Datos
-        $pdf->SetFont('helvetica', '', 9);
-        foreach ($this->trips_data as $trip) {
-            // Verificar si necesita nueva página
-            if ($pdf->GetY() > 250) {
+        for ($page = 1; $page <= $pages_needed; $page++) {
+            // Si no es la primera página, agregar nueva página
+            if ($page > 1) {
                 $pdf->AddPage();
-                // Repetir headers
-                $pdf->SetFont('helvetica', 'B', 10);
-                $pdf->Cell(25, 8, 'Invoice Date', 1, 0, 'C');
-                $pdf->Cell(30, 8, 'Location', 1, 0, 'C');
-                $pdf->Cell(25, 8, 'Ticket Number', 1, 0, 'C');
-                $pdf->Cell(20, 8, 'Rate', 1, 0, 'C');
-                $pdf->Cell(20, 8, 'Quantity/TON', 1, 0, 'C');
-                $pdf->Cell(25, 8, 'Amount', 1, 0, 'C');
-                $pdf->Cell(25, 8, 'Vehicle ID', 1, 1, 'C');
-                $pdf->SetFont('helvetica', '', 9);
+                $pdf->Ln(10); // Espacio al inicio de página
             }
             
-            $pdf->Cell(25, 6, date('m/d/Y', strtotime($trip['trip_date'])), 1, 0, 'C');
-            $pdf->Cell(30, 6, substr($trip['location'], 0, 15), 1, 0, 'L');
-            $pdf->Cell(25, 6, $trip['ticket_number'], 1, 0, 'C');
-            $pdf->Cell(20, 6, '$' . number_format($trip['haul_rate'], 2), 1, 0, 'R');
-            $pdf->Cell(20, 6, number_format($trip['quantity'], 2), 1, 0, 'R');
-            $pdf->Cell(25, 6, '$' . number_format($trip['amount'], 2), 1, 0, 'R');
-            $pdf->Cell(25, 6, $trip['vehicle_number'], 1, 1, 'C');
+            // Headers de la tabla - FONDO NEGRO CON BORDES BLANCOS
+            $pdf->SetFont('helvetica', 'B', 9);
+            $pdf->SetFillColor(0, 0, 0); // Negro #000000
+            $pdf->SetTextColor(255, 255, 255); // Texto blanco
+            $pdf->SetDrawColor(255, 255, 255); // Líneas blancas
+            
+            $headers = ['Invoice Date', 'Location', 'Ticket No.', 'Vehicle ID', 'Rate', 'Quantity/TON', 'Amount'];
+            
+            foreach ($headers as $i => $header) {
+                $pdf->Cell($widths[$i], $header_height, $header, 1, 0, 'C', true);
+            }
+            $pdf->Ln();
+            
+            // Restaurar color de texto a negro para datos (mantener líneas blancas)
+            $pdf->SetTextColor(0, 0, 0);
+            $pdf->SetFont('helvetica', '', 9);
+            
+            // Datos de trips con colores alternados
+            $trips_in_this_page = 0;
+            $row_color_index = 0; // Para alternar colores
+            
+            while ($current_trip_index < $total_trips && $trips_in_this_page < $trips_per_page) {
+                $trip = $trips[$current_trip_index];
+                
+                // Alternar colores de fila
+                if ($row_color_index % 2 == 0) {
+                    $pdf->SetFillColor(165, 165, 165); // Gris claro #A5A5A5
+                } else {
+                    $pdf->SetFillColor(216, 216, 216); // Gris más claro #D8D8D8
+                }
+                
+                // Formatear datos
+                $invoice_date = date('m/d/Y', strtotime($trip['trip_date']));
+                $location = substr($trip['location'], 0, 15); // Truncar si es muy largo
+                $ticket_no = $trip['ticket_number'];
+                $vehicle_id = $trip['vehicle_number'];
+                $rate = number_format($trip['haul_rate'], 2);
+                $quantity = number_format($trip['quantity'], 2);
+                $amount = number_format($trip['amount'], 2);
+                
+                // Crear fila con fondo de color y bordes blancos
+                $pdf->Cell($widths[0], $row_height, $invoice_date, 1, 0, 'C', true);
+                $pdf->Cell($widths[1], $row_height, $location, 1, 0, 'L', true);
+                $pdf->Cell($widths[2], $row_height, $ticket_no, 1, 0, 'C', true);
+                $pdf->Cell($widths[3], $row_height, $vehicle_id, 1, 0, 'C', true);
+                $pdf->Cell($widths[4], $row_height, $rate, 1, 0, 'R', true);
+                $pdf->Cell($widths[5], $row_height, $quantity, 1, 0, 'R', true);
+                $pdf->Cell($widths[6], $row_height, $amount, 1, 0, 'R', true);
+                $pdf->Ln();
+                
+                $current_trip_index++;
+                $trips_in_this_page++;
+                $row_color_index++;
+            }
+            
+            // Si es la última página, agregar totales
+            if ($page === $pages_needed) {
+                $this->addTotalsToPage($pdf, $capital_data);
+            } else {
+                // En páginas intermedias, agregar indicador de continuación
+                $pdf->Ln(5);
+                $pdf->SetFont('helvetica', 'I', 10);
+                $pdf->SetTextColor(100, 100, 100); // Gris para texto de continuación
+                $pdf->Cell(0, 6, "Continued on next page...", 0, 1, 'C');
+                $pdf->SetTextColor(0, 0, 0); // Restaurar negro
+            }
         }
+    }
+    
+    /**
+     * Agregar totales a la página en el lado derecho
+     */
+    private function addTotalsToPage($pdf, $capital_data) {
+        $pdf->Ln(10); // Espacio entre tabla y totales
         
-        $pdf->Ln(5);
-        
-        // TOTALES
+        // Configurar fuente para totales
         $pdf->SetFont('helvetica', 'B', 12);
-        $pdf->Cell(120, 8, '', 0, 0, 'L'); // Espaciador
-        $pdf->Cell(25, 8, 'SUBTOTAL', 1, 0, 'L');
-        $pdf->Cell(25, 8, '$' . number_format($capital_data['subtotal'], 2), 1, 1, 'R');
+        $pdf->SetTextColor(0, 0, 0); // Negro
+        $pdf->SetDrawColor(255, 255, 255); // Líneas blancas
         
-        $pdf->Cell(120, 8, '', 0, 0, 'L');
-        $pdf->Cell(25, 8, "CAPITAL'S {$capital_data['capital_percentage']}%", 1, 0, 'L');
-        $pdf->Cell(25, 8, '$' . number_format($capital_data['capital_deduction'], 2), 1, 1, 'R');
+        // Ancho de la tabla para alinear totales a la derecha
+        $table_width = array_sum([25, 20, 25, 25, 20, 25, 25]); // Total: 165
+        $totals_width = 60; // Ancho para las dos columnas de totales
+        $left_spacing = $table_width - $totals_width; // Espacio a la izquierda
         
-        $pdf->Cell(120, 8, '', 0, 0, 'L');
-        $pdf->Cell(25, 8, 'TOTAL PAYMENT', 1, 0, 'L');
-        $pdf->Cell(25, 8, '$' . number_format($capital_data['total_payment'], 2), 1, 1, 'R');
+        // SUBTOTAL
+        $pdf->Cell($left_spacing, 8, '', 0, 0, 'C'); // Espaciado izquierdo
+        $pdf->Cell(30, 8, 'SUBTOTAL', 1, 0, 'L', false);
+        $pdf->Cell(30, 8, '$ ' . number_format($capital_data['subtotal'], 2), 1, 1, 'R', false);
         
-        // Guardar archivo PDF
-        $filename = "Capital_Transport_Payment_{$capital_data['payment_no']}_" . date('Y-m-d') . ".pdf";
-        $file_path = REPORTS_PATH . $filename;
+        // CAPITAL'S PERCENTAGE
+        $pdf->Cell($left_spacing, 8, '', 0, 0, 'C'); // Espaciado izquierdo
+        $pdf->Cell(30, 8, "CAPITAL'S {$capital_data['capital_percentage']}%", 1, 0, 'L', false);
+        $pdf->Cell(30, 8, '$ ' . number_format($capital_data['capital_deduction'], 2), 1, 1, 'R', false);
         
-        $pdf->Output($file_path, 'F');
-        
-        return [
-            'filename' => $filename,
-            'file_path' => $file_path,
-            'file_size' => filesize($file_path)
-        ];
+        // TOTAL PAYMENT
+        $pdf->Cell($left_spacing, 8, '', 0, 0, 'C'); // Espaciado izquierdo
+        $pdf->Cell(30, 8, 'TOTAL PAYMENT', 1, 0, 'L', false);
+        $pdf->Cell(30, 8, '$ ' . number_format($capital_data['total_payment'], 2), 1, 1, 'R', false);
     }
     
     /**
@@ -520,4 +553,3 @@ class CapitalTransportReportGenerator {
         return empty($errors) ? true : $errors;
     }
 }
-?>

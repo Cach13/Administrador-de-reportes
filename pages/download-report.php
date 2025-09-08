@@ -1,6 +1,6 @@
 <?php
 /**
- * Download Report - Sistema de descarga de reportes generados
+ * Download Report - Sistema de descarga de reportes generados CORREGIDO
  * Ruta: /pages/download-report.php
  */
 
@@ -11,6 +11,7 @@ require_once '../classes/Database.php';
 try {
     // Obtener ID del reporte
     $report_id = $_GET['id'] ?? null;
+    $requested_format = $_GET['format'] ?? 'pdf'; // PDF por defecto
     
     if (!$report_id || !is_numeric($report_id)) {
         throw new Exception('ID de reporte inválido');
@@ -36,14 +37,26 @@ try {
         throw new Exception('Reporte no encontrado');
     }
     
-    // Verificar que el archivo existe
-    if (!$report['file_path'] || !file_exists($report['file_path'])) {
-        throw new Exception('Archivo de reporte no encontrado en el servidor');
+    // Determinar archivo correcto según formato solicitado
+    $base_filename = "Capital_Transport_Payment_{$report['payment_no']}_" . date('Y-m-d', strtotime($report['payment_date']));
+    $reports_dir = dirname(dirname(__FILE__)) . '/assets/reports/';
+    
+    if ($requested_format === 'pdf') {
+        $file_path = $reports_dir . $base_filename . '.pdf';
+        $content_type = 'application/pdf';
+        $file_extension = 'pdf';
+    } else {
+        $file_path = $reports_dir . $base_filename . '.xlsx';
+        $content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        $file_extension = 'xlsx';
     }
     
-    $file_path = $report['file_path'];
+    // Verificar que el archivo existe
+    if (!file_exists($file_path)) {
+        throw new Exception("Archivo {$requested_format} no encontrado: " . basename($file_path));
+    }
+    
     $file_size = filesize($file_path);
-    $file_extension = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
     
     // Generar nombre de archivo para descarga
     $download_filename = sprintf(
@@ -54,23 +67,10 @@ try {
         $file_extension
     );
     
-    // Configurar headers según el tipo de archivo
-    switch ($file_extension) {
-        case 'pdf':
-            $content_type = 'application/pdf';
-            break;
-        case 'xlsx':
-            $content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            break;
-        case 'xls':
-            $content_type = 'application/vnd.ms-excel';
-            break;
-        default:
-            $content_type = 'application/octet-stream';
-    }
-    
     // Limpiar cualquier output previo
-    ob_clean();
+    if (ob_get_level()) {
+        ob_end_clean();
+    }
     
     // Headers para descarga
     header('Content-Type: ' . $content_type);
@@ -89,24 +89,32 @@ try {
                 flush();
             }
             fclose($handle);
+        } else {
+            throw new Exception('No se puede abrir el archivo para lectura');
         }
     } else {
         readfile($file_path);
     }
     
     // Log de descarga
-    $db->insert('activity_logs', [
-        'user_id' => $_SESSION['user_id'],
-        'action' => 'REPORT_DOWNLOAD',
-        'description' => "Descarga de reporte Payment No. {$report['payment_no']} - {$report['company_name']}",
-        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-    ]);
+    try {
+        $db->insert('activity_logs', [
+            'user_id' => $_SESSION['user_id'] ?? 1,
+            'action' => 'REPORT_DOWNLOAD',
+            'description' => "Descarga de reporte {$requested_format} Payment No. {$report['payment_no']} - {$report['company_name']}",
+            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+        ]);
+    } catch (Exception $log_error) {
+        // Ignorar errores de log
+        error_log("Error logging download: " . $log_error->getMessage());
+    }
     
     exit;
     
 } catch (Exception $e) {
     // Error handling con página HTML
     $error_message = htmlspecialchars($e->getMessage());
+    error_log("Download error: " . $e->getMessage());
     
     // Si ya se enviaron headers, solo mostrar el error
     if (headers_sent()) {
@@ -202,6 +210,16 @@ try {
             .btn-secondary:hover {
                 background: #4b5563;
             }
+            
+            .debug-info {
+                background: #f0f9ff;
+                border: 1px solid #bae6fd;
+                padding: 1rem;
+                border-radius: 8px;
+                margin: 1rem 0;
+                font-size: 0.9rem;
+                text-align: left;
+            }
         </style>
     </head>
     <body>
@@ -213,6 +231,16 @@ try {
             <p class="error-message">
                 <?php echo $error_message; ?>
             </p>
+            
+            <?php if (isset($requested_format) && isset($report_id)): ?>
+            <div class="debug-info">
+                <strong>Debug Info:</strong><br>
+                Report ID: <?php echo htmlspecialchars($report_id); ?><br>
+                Formato solicitado: <?php echo htmlspecialchars($requested_format); ?><br>
+                Archivo buscado: <?php echo htmlspecialchars(basename($file_path ?? 'N/A')); ?>
+            </div>
+            <?php endif; ?>
+            
             <div>
                 <a href="reports.php" class="btn">
                     <i class="fas fa-arrow-left"></i>
