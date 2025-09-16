@@ -1,6 +1,6 @@
 <?php
 /**
- * Dashboard Principal - Estilo actualizado Capital Transport
+ * Dashboard Principal - Versión Simplificada Capital Transport
  * Transport Management System
  */
 
@@ -10,29 +10,11 @@ require_once '../classes/Database.php';
 
 $db = Database::getInstance();
 
-// Obtener estadísticas del sistema
+// Obtener solo lo esencial
 try {
-    $stats = [];
-    
-    // Estadísticas básicas
-    $companies_result = $db->fetch("SELECT COUNT(*) as total FROM companies WHERE is_active = 1");
-    $stats['total_companies'] = $companies_result['total'] ?? 0;
-    
-    $vouchers_result = $db->fetch("SELECT COUNT(*) as total FROM vouchers");
-    $stats['total_vouchers'] = $vouchers_result['total'] ?? 0;
-    
-    $trips_result = $db->fetch("SELECT COUNT(*) as total FROM trips");
-    $stats['total_trips'] = $trips_result['total'] ?? 0;
-    
+    // Solo vouchers pendientes para la alerta
     $pending_result = $db->fetch("SELECT COUNT(*) as total FROM vouchers WHERE status = 'uploaded'");
-    $stats['pending_vouchers'] = $pending_result['total'] ?? 0;
-    
-    // Estadísticas financieras
-    $amount_result = $db->fetch("SELECT SUM(amount) as total FROM trips");
-    $stats['total_amount'] = $amount_result['total'] ?? 0;
-    
-    $month_result = $db->fetch("SELECT SUM(amount) as total FROM trips WHERE MONTH(trip_date) = MONTH(CURRENT_DATE()) AND YEAR(trip_date) = YEAR(CURRENT_DATE())");
-    $stats['this_month'] = $month_result['total'] ?? 0;
+    $pending_vouchers = $pending_result['total'] ?? 0;
     
     // Últimos vouchers procesados
     $recent_vouchers = $db->fetchAll("
@@ -46,11 +28,11 @@ try {
         WHERE v.status = 'processed' 
         GROUP BY v.id 
         ORDER BY v.upload_date DESC 
-        LIMIT 5
+        LIMIT 8
     ");
     
 } catch (Exception $e) {
-    $stats = array_fill_keys(['total_companies', 'total_vouchers', 'total_trips', 'pending_vouchers', 'total_amount', 'this_month'], 0);
+    $pending_vouchers = 0;
     $recent_vouchers = [];
     error_log("Dashboard stats error: " . $e->getMessage());
 }
@@ -108,7 +90,7 @@ $page_title = "Dashboard Principal";
             display: flex;
             justify-content: space-between;
             align-items: center;
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
         }
 
@@ -193,7 +175,7 @@ $page_title = "Dashboard Principal";
 
         /* MAIN CONTENT */
         .main-content {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 2rem;
         }
@@ -216,63 +198,6 @@ $page_title = "Dashboard Principal";
 
         .page-title i {
             color: var(--primary-red);
-        }
-
-        .page-actions {
-            display: flex;
-            gap: 1rem;
-        }
-
-        /* STATS CARDS */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            background: var(--white);
-            border-radius: 16px;
-            padding: 2rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            border: 2px solid transparent;
-            transition: all 0.3s ease;
-            text-align: center;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-        }
-
-        .stat-icon {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 1rem;
-            font-size: 1.5rem;
-            color: white;
-        }
-
-        .stat-icon.companies { background: linear-gradient(135deg, var(--info-blue), #2563eb); }
-        .stat-icon.vouchers { background: linear-gradient(135deg, var(--success-green), #047857); }
-        .stat-icon.trips { background: linear-gradient(135deg, var(--warning-orange), #c2410c); }
-        .stat-icon.amount { background: linear-gradient(135deg, var(--primary-red), #b91c1c); }
-
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: 800;
-            color: var(--dark-gray);
-            margin-bottom: 0.25rem;
-        }
-
-        .stat-label {
-            color: var(--text-muted);
-            font-weight: 600;
         }
 
         /* SECTIONS */
@@ -376,95 +301,18 @@ $page_title = "Dashboard Principal";
             text-decoration: none;
         }
 
-        .btn-success {
-            background: var(--success-green);
-            color: var(--white);
-        }
-
-        .btn-success:hover {
-            background: #059669;
-            color: var(--white);
-            text-decoration: none;
-        }
-
-        .btn-secondary {
-            background: var(--text-muted);
-            color: var(--white);
-        }
-
-        .btn-secondary:hover {
-            background: #4b5563;
-            color: var(--white);
-            text-decoration: none;
-        }
-
         .btn-sm {
             padding: 0.35rem 0.75rem;
             font-size: 0.85rem;
         }
 
-        /* QUICK ACTIONS */
-        .actions-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-        }
-
-        .action-card {
-            background: var(--white);
-            border: 2px solid var(--border-light);
-            border-radius: 12px;
-            padding: 1.5rem;
-            text-decoration: none;
-            color: var(--dark-gray);
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .action-card:hover {
-            border-color: var(--primary-red);
-            color: var(--primary-red);
-            transform: translateY(-2px);
-            text-decoration: none;
-        }
-
-        .action-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 1.2rem;
-            flex-shrink: 0;
-        }
-
-        .action-icon.companies { background: var(--info-blue); }
-        .action-icon.reports { background: var(--success-green); }
-        .action-icon.vouchers { background: var(--warning-orange); }
-        .action-icon.data { background: var(--primary-red); }
-
-        .action-content h4 {
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-
-        .action-content p {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin: 0;
-        }
-
-        /* RECENT ACTIVITY */
-        .recent-table {
+        /* VOUCHERS TABLE */
+        .vouchers-table {
             width: 100%;
             border-collapse: collapse;
         }
 
-        .recent-table th {
+        .vouchers-table th {
             background: var(--dark-gray);
             color: var(--white);
             padding: 1rem;
@@ -473,13 +321,13 @@ $page_title = "Dashboard Principal";
             font-size: 0.9rem;
         }
 
-        .recent-table td {
+        .vouchers-table td {
             padding: 1rem;
             border-bottom: 1px solid var(--border-light);
             vertical-align: middle;
         }
 
-        .recent-table tr:hover {
+        .vouchers-table tr:hover {
             background: #f8f9fa;
         }
 
@@ -534,7 +382,7 @@ $page_title = "Dashboard Principal";
         /* EMPTY STATE */
         .empty-state {
             text-align: center;
-            padding: 3rem 2rem;
+            padding: 4rem 2rem;
             color: var(--text-muted);
         }
 
@@ -542,6 +390,11 @@ $page_title = "Dashboard Principal";
             font-size: 3rem;
             margin-bottom: 1rem;
             color: var(--border-light);
+        }
+
+        .empty-state h3 {
+            margin-bottom: 0.5rem;
+            color: var(--dark-gray);
         }
 
         /* ALERTS */
@@ -604,6 +457,40 @@ $page_title = "Dashboard Principal";
             color: var(--text-muted);
         }
 
+        /* PENDING ALERT */
+        .pending-alert {
+            background: linear-gradient(135deg, var(--warning-orange), #ea580c);
+            color: var(--white);
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .pending-alert i {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .pending-alert h3 {
+            margin-bottom: 0.5rem;
+        }
+
+        .pending-alert p {
+            margin-bottom: 1.5rem;
+        }
+
+        .pending-alert .btn {
+            background: var(--white);
+            color: var(--warning-orange);
+            font-weight: 600;
+        }
+
+        .pending-alert .btn:hover {
+            background: #f9fafb;
+            color: var(--warning-orange);
+        }
+
         /* ANIMATIONS */
         @keyframes slideIn {
             from { transform: translateX(100%); opacity: 0; }
@@ -641,16 +528,13 @@ $page_title = "Dashboard Principal";
                 gap: 1rem;
             }
 
-            .page-actions {
-                justify-content: center;
+            .vouchers-table {
+                font-size: 0.8rem;
             }
 
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .actions-grid {
-                grid-template-columns: 1fr;
+            .vouchers-table th,
+            .vouchers-table td {
+                padding: 0.5rem;
             }
         }
     </style>
@@ -703,49 +587,20 @@ $page_title = "Dashboard Principal";
                 <i class="fas fa-tachometer-alt"></i>
                 Dashboard Principal
             </h1>
-            <div class="page-actions">
-                <button class="btn btn-secondary" onclick="refreshStats()">
-                    <i class="fas fa-sync"></i>
-                    Refresh
-                </button>
-                <a href="view-extracted-data.php" class="btn btn-primary">
-                    <i class="fas fa-database"></i>
-                    Ver Datos
-                </a>
-            </div>
         </div>
 
-        <!-- Stats Cards -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon companies">
-                    <i class="fas fa-building"></i>
-                </div>
-                <div class="stat-number" id="totalCompanies"><?php echo number_format($stats['total_companies']); ?></div>
-                <div class="stat-label">Empresas Activas</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon vouchers">
-                    <i class="fas fa-file-invoice"></i>
-                </div>
-                <div class="stat-number" id="totalVouchers"><?php echo number_format($stats['total_vouchers']); ?></div>
-                <div class="stat-label">Vouchers Subidos</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon trips">
-                    <i class="fas fa-truck"></i>
-                </div>
-                <div class="stat-number" id="totalTrips"><?php echo number_format($stats['total_trips']); ?></div>
-                <div class="stat-label">Viajes Extraídos</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon amount">
-                    <i class="fas fa-dollar-sign"></i>
-                </div>
-                <div class="stat-number" id="totalAmount">$<?php echo number_format($stats['total_amount']); ?></div>
-                <div class="stat-label">Total Procesado</div>
-            </div>
+        <!-- Pending Vouchers Alert -->
+        <?php if ($pending_vouchers > 0): ?>
+        <div class="pending-alert">
+            <i class="fas fa-exclamation-triangle"></i>
+            <h3>Atención: Vouchers Pendientes</h3>
+            <p>Tienes <?php echo $pending_vouchers; ?> voucher(s) pendiente(s) de procesar</p>
+            <a href="view-extracted-data.php" class="btn">
+                <i class="fas fa-cog"></i>
+                Procesar Ahora
+            </a>
         </div>
+        <?php endif; ?>
 
         <!-- Upload Section -->
         <div class="section">
@@ -754,9 +609,9 @@ $page_title = "Dashboard Principal";
                     <i class="fas fa-cloud-upload-alt"></i>
                     Subir Voucher Martin Marieta
                 </div>
-                <?php if ($stats['pending_vouchers'] > 0): ?>
+                <?php if ($pending_vouchers > 0): ?>
                 <div style="background: var(--warning-orange); color: var(--white); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: 600;">
-                    <?php echo $stats['pending_vouchers']; ?> pendientes
+                    <?php echo $pending_vouchers; ?> pendientes
                 </div>
                 <?php endif; ?>
             </div>
@@ -781,73 +636,20 @@ $page_title = "Dashboard Principal";
             </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="section">
-            <div class="section-header">
-                <div class="section-title">
-                    <i class="fas fa-bolt"></i>
-                    Acciones Rápidas
-                </div>
-            </div>
-            <div class="section-content">
-                <div class="actions-grid">
-                    <a href="view-extracted-data.php" class="action-card">
-                        <div class="action-icon data">
-                            <i class="fas fa-database"></i>
-                        </div>
-                        <div class="action-content">
-                            <h4>Ver Datos Extraídos</h4>
-                            <p>Revisar y procesar vouchers</p>
-                        </div>
-                    </a>
-                    
-                    <a href="companies.php" class="action-card">
-                        <div class="action-icon companies">
-                            <i class="fas fa-building"></i>
-                        </div>
-                        <div class="action-content">
-                            <h4>Gestionar Empresas</h4>
-                            <p>Crear y editar empresas</p>
-                        </div>
-                    </a>
-                    
-                    <a href="reports.php" class="action-card">
-                        <div class="action-icon reports">
-                            <i class="fas fa-chart-line"></i>
-                        </div>
-                        <div class="action-content">
-                            <h4>Generar Reportes</h4>
-                            <p>Capital Transport reports</p>
-                        </div>
-                    </a>
-                    
-                    <a href="vouchers.php" class="action-card">
-                        <div class="action-icon vouchers">
-                            <i class="fas fa-file-invoice-dollar"></i>
-                        </div>
-                        <div class="action-content">
-                            <h4>Historial Vouchers</h4>
-                            <p>Ver todos los vouchers</p>
-                        </div>
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <!-- Recent Activity -->
+        <!-- Recent Vouchers -->
         <?php if (!empty($recent_vouchers)): ?>
         <div class="section">
             <div class="section-header">
                 <div class="section-title">
                     <i class="fas fa-history"></i>
-                    Últimos Vouchers Procesados
+                    Vouchers Procesados Recientes
                 </div>
                 <div style="background: var(--white); color: var(--primary-red); padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600;">
-                    <?php echo count($recent_vouchers); ?> recientes
+                    <?php echo count($recent_vouchers); ?> vouchers
                 </div>
             </div>
             <div class="section-content">
-                <table class="recent-table">
+                <table class="vouchers-table">
                     <thead>
                         <tr>
                             <th>Archivo</th>
@@ -899,7 +701,7 @@ $page_title = "Dashboard Principal";
         </div>
         <?php endif; ?>
 
-        <!-- No Data State -->
+        <!-- Empty State -->
         <?php if (empty($recent_vouchers)): ?>
         <div class="section">
             <div class="section-content">
@@ -915,21 +717,143 @@ $page_title = "Dashboard Principal";
             </div>
         </div>
         <?php endif; ?>
-
-        <!-- Pending Vouchers Alert -->
-        <?php if ($stats['pending_vouchers'] > 0): ?>
-        <div class="section">
-            <div class="section-content">
-                <div style="background: linear-gradient(135deg, var(--warning-orange), #ea580c); color: var(--white); padding: 1.5rem; border-radius: 12px; text-align: center;">
-                    <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
-                    <h3 style="margin-bottom: 0.5rem;">Atención: Vouchers Pendientes</h3>
-                    <p style="margin-bottom: 1.5rem;">Tienes <?php echo $stats['pending_vouchers']; ?> voucher(s) pendiente(s) de procesar</p>
-                    <a href="view-extracted-data.php" class="btn" style="background: var(--white); color: var(--warning-orange); font-weight: 600;">
-                        <i class="fas fa-cog"></i>
-                        Procesar Ahora
-                    </a>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
     </div>
+
+    <!-- JavaScript para Upload -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadZone = document.getElementById('uploadZone');
+            const fileInput = document.getElementById('fileInput');
+            const uploadForm = document.getElementById('uploadForm');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+
+            // Click para abrir file picker
+            uploadZone.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            // Drag & Drop handlers
+            uploadZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadZone.classList.add('dragover');
+            });
+
+            uploadZone.addEventListener('dragleave', () => {
+                uploadZone.classList.remove('dragover');
+            });
+
+            uploadZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    handleFileUpload();
+                }
+            });
+
+            // Cambio de archivo
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length > 0) {
+                    handleFileUpload();
+                }
+            });
+
+            function handleFileUpload() {
+                const file = fileInput.files[0];
+                
+                // Validaciones
+                if (!file.type.includes('pdf')) {
+                    showAlert('error', 'Solo se permiten archivos PDF');
+                    return;
+                }
+                
+                if (file.size > 20 * 1024 * 1024) {
+                    showAlert('error', 'El archivo es muy grande (máx 20MB)');
+                    return;
+                }
+
+                // Preparar upload
+                const formData = new FormData();
+                formData.append('voucher_file', file);
+
+                // Mostrar progress
+                progressContainer.style.display = 'block';
+                progressBar.style.width = '0%';
+                progressText.textContent = 'Subiendo archivo...';
+
+                // Enviar archivo
+                const xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = (e.loaded / e.total) * 100;
+                        progressBar.style.width = percentComplete + '%';
+                        progressText.textContent = `Subiendo... ${Math.round(percentComplete)}%`;
+                    }
+                });
+
+                xhr.addEventListener('load', () => {
+                    if (xhr.status === 200) {
+                        try {
+                            const response = JSON.parse(xhr.responseText);
+                            if (response.success) {
+                                progressText.textContent = 'Archivo subido correctamente';
+                                showAlert('success', response.message);
+                                
+                                // Recargar página después de 2 segundos
+                                setTimeout(() => {
+                                    window.location.reload();
+                                }, 2000);
+                            } else {
+                                showAlert('error', response.message || 'Error subiendo archivo');
+                            }
+                        } catch (e) {
+                            showAlert('error', 'Error procesando respuesta del servidor');
+                        }
+                    } else {
+                        showAlert('error', 'Error en la conexión al servidor');
+                    }
+                    
+                    // Ocultar progress después de un momento
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                        fileInput.value = '';
+                    }, 3000);
+                });
+
+                xhr.addEventListener('error', () => {
+                    showAlert('error', 'Error de conexión');
+                    progressContainer.style.display = 'none';
+                    fileInput.value = '';
+                });
+
+                xhr.open('POST', '../api/upload-file.php');
+                xhr.send(formData);
+            }
+
+            function showAlert(type, message) {
+                const alertContainer = document.getElementById('alertContainer');
+                const alert = document.createElement('div');
+                alert.className = `alert alert-${type}`;
+                alert.innerHTML = `
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.remove()" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 1.2rem;">&times;</button>
+                `;
+                
+                alertContainer.appendChild(alert);
+                
+                // Auto-remove después de 5 segundos
+                setTimeout(() => {
+                    if (alert.parentElement) {
+                        alert.remove();
+                    }
+                }, 5000);
+            }
+        });
+    </script>
+</body>
+</html>

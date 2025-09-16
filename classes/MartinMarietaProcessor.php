@@ -1,8 +1,12 @@
 <?php
 /**
- * Procesador específico para archivos Martin Marieta Materials
- * Extrae: Ship Date, Location, Ticket Number, Haul Rate, Quantity, Amount, Vehicle Number
- * Filtra por: Caracteres 4-6 del Vehicle Number para determinar empresa
+ * 🔧 ARREGLO CRÍTICO: MartinMarietaProcessor.php
+ * ⚠️  PROBLEMA: Location y Ticket Number mal extraídos
+ * ✅  SOLUCIÓN: Patrón regex correcto para formato Martin Marieta
+ * 
+ * ANTES: "PLANT 082", "T840437" (incorrecto)
+ * DESPUÉS: "16431", "31733474" (correcto)
+ * 
  * Ruta: /classes/MartinMarietaProcessor.php
  */
 
@@ -26,13 +30,13 @@ class MartinMarietaProcessor {
     
     // Mapeo de campos Martin Marieta
     private $field_mapping = [
-        'ship_date' => 'trip_date',      // Ship Date → trip_date
-        'location' => 'location',        // Location → location  
-        'ticket_number' => 'ticket_number', // Ticket Number → ticket_number
-        'haul_rate' => 'haul_rate',      // Haul Rate → haul_rate
-        'quantity' => 'quantity',        // Quantity → quantity
-        'amount' => 'amount',            // Amount → amount
-        'vehicle_number' => 'vehicle_number' // Vehicle Number → vehicle_number
+        'ship_date' => 'trip_date',
+        'location' => 'location',
+        'ticket_number' => 'ticket_number',
+        'haul_rate' => 'haul_rate',
+        'quantity' => 'quantity',
+        'amount' => 'amount',
+        'vehicle_number' => 'vehicle_number'
     ];
     
     public function __construct($voucher_id, $selected_companies = []) {
@@ -109,7 +113,8 @@ class MartinMarietaProcessor {
     }
     
     /**
-     * Extraer datos desde PDF Martin Marieta
+     * 🔧 MÉTODO CORREGIDO: Extraer datos desde PDF Martin Marieta
+     * ✅ PATRÓN ACTUALIZADO para formato real del voucher
      */
     private function extractFromPDF() {
         $parser = new Parser();
@@ -119,32 +124,84 @@ class MartinMarietaProcessor {
         $extracted_data = [];
         $lines = explode("\n", $text);
         
+        $this->logger->log(null, 'PDF_EXTRACTION_DEBUG', "Iniciando extracción PDF con " . count($lines) . " líneas");
+        
         foreach ($lines as $line_number => $line) {
             $line = trim($line);
             if (empty($line)) continue;
             
-            // Patrón específico para Martin Marieta PDF
-            // Ejemplo: "07/14/2025 PLANT 001 H2648318 41142689 21.56 10.60 228.54 RMTJAV001"
-            $pattern = '/(\d{2}\/\d{2}\/\d{4})\s+([A-Z\s]+)\s+([H]\w+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z0-9]{9})/';
+            // 🔧 PATRÓN CORREGIDO para formato Martin Marieta real:
+            // Ejemplo: "02 16431 PH 15089949 08/22/2025 31733474 0 RMTMVT007 28.53 8.32 TN 237.37"
+            // Grupos: $1=oper, $2=location, $3=doc_type, $4=doc_number, $5=ship_date, $6=ticket_number, $7=replaced, $8=vehicle, $9=haul_rate, $10=quantity, $11=uom, $12=amount
+            
+            $pattern = '/^(\d{2})\s+(\d{4,6})\s+([A-Z]{2})\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+([A-Z0-9]{9})\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{2})\s+([\d.]+)$/';
             
             if (preg_match($pattern, $line, $matches)) {
-                $extracted_data[] = [
-                    'ship_date' => $this->parseDate($matches[1]),
-                    'location' => trim($matches[2]),
-                    'ticket_number' => $matches[3],
-                    'reference_number' => $matches[4], // Campo adicional
-                    'haul_rate' => floatval($matches[6]),
-                    'quantity' => floatval($matches[5]),
-                    'amount' => floatval($matches[7]),
-                    'vehicle_number' => $matches[8],
+                // ✅ EXTRACCIÓN CORRECTA con índices actualizados
+                $extracted_row = [
+                    'ship_date' => $this->parseDate($matches[5]),      // Posición 5: "08/22/2025"
+                    'location' => $matches[2],                         // ✅ Posición 2: "16431" (CORRECTO)
+                    'ticket_number' => $matches[6],                    // ✅ Posición 6: "31733474" (CORRECTO)
+                    'haul_rate' => floatval($matches[9]),             // Posición 9: "28.53"
+                    'quantity' => floatval($matches[10]),             // Posición 10: "8.32"
+                    'amount' => floatval($matches[12]),               // Posición 12: "237.37"
+                    'vehicle_number' => $matches[8],                   // Posición 8: "RMTMVT007"
                     'source_row' => $line_number + 1,
                     'source_line' => $line,
-                    'confidence' => 0.95 // Alta confianza para patrón exacto
+                    'confidence' => 0.95,
+                    'oper_code' => $matches[1],                       // Extra: "02"
+                    'doc_type' => $matches[3],                        // Extra: "PH"
+                    'doc_number' => $matches[4],                      // Extra: "15089949"
+                    'uom' => $matches[11]                             // Extra: "TN"
+                ];
+                
+                $extracted_data[] = $extracted_row;
+                
+                // 🔍 DEBUG: Log de extracción exitosa
+                $this->logger->log(null, 'PDF_ROW_EXTRACTED', 
+                    "Línea {$line_number}: Location={$matches[2]}, Ticket={$matches[6]}, Vehicle={$matches[8]}, Amount={$matches[12]}");
+            } else {
+                // 🔍 DEBUG: Log de líneas no coincidentes (solo para debugging)
+                if (strpos($line, 'RMTMVT') !== false || strpos($line, 'RMTCTL') !== false || strpos($line, 'RMTJAV') !== false) {
+                    $this->logger->log(null, 'PDF_PATTERN_MISMATCH', "Línea {$line_number} no coincide: {$line}");
+                }
+            }
+        }
+        
+        $this->logger->log(null, 'PDF_EXTRACTION_COMPLETE', "Extraídos " . count($extracted_data) . " registros del PDF");
+        
+        return $extracted_data;
+    }
+    
+    /**
+     * 🔧 MÉTODO ACTUALIZADO: Búsqueda de patrones alternativos para casos edge
+     */
+    private function extractAlternativePatterns($lines) {
+        $alternative_data = [];
+        
+        foreach ($lines as $line_number => $line) {
+            $line = trim($line);
+            
+            // Patrón alternativo sin oper code al inicio
+            $alt_pattern = '/(\d{4,6})\s+([A-Z]{2})\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+([A-Z0-9]{9})\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{2})\s+([\d.]+)/';
+            
+            if (preg_match($alt_pattern, $line, $matches)) {
+                $alternative_data[] = [
+                    'ship_date' => $this->parseDate($matches[4]),
+                    'location' => $matches[1],           // Location
+                    'ticket_number' => $matches[5],      // Ticket Number
+                    'haul_rate' => floatval($matches[8]),
+                    'quantity' => floatval($matches[9]),
+                    'amount' => floatval($matches[11]),
+                    'vehicle_number' => $matches[7],
+                    'source_row' => $line_number + 1,
+                    'source_line' => $line,
+                    'confidence' => 0.85  // Menor confianza para patrón alternativo
                 ];
             }
         }
         
-        return $extracted_data;
+        return $alternative_data;
     }
     
     /**
@@ -195,55 +252,54 @@ class MartinMarietaProcessor {
      */
     private function findExcelHeaders($worksheet) {
         $possible_headers = [
-            'ship_date' => ['ship date', 'fecha', 'date', 'fecha envio'],
-            'location' => ['location', 'ubicacion', 'lugar', 'planta'],
-            'ticket_number' => ['ticket number', 'ticket', 'numero ticket', 'folio'],
-            'haul_rate' => ['haul rate', 'rate', 'tarifa', 'precio'],
-            'quantity' => ['quantity', 'cantidad', 'toneladas', 'tons'],
-            'amount' => ['amount', 'monto', 'importe', 'total'],
-            'vehicle_number' => ['vehicle number', 'vehicle', 'vehiculo', 'placa']
+            'ship_date' => ['Ship Date', 'Date', 'Ship_Date', 'Fecha'],
+            'location' => ['Location', 'Oper Location', 'Location Description', 'Ubicación'],
+            'ticket_number' => ['Ticket Number', 'Ticket', 'Ticket_Number', 'Numero_Ticket'],
+            'haul_rate' => ['Haul Rate', 'Rate', 'Haul_Rate', 'Tarifa'],
+            'quantity' => ['Quantity', 'Qty', 'Amount', 'Cantidad'],
+            'amount' => ['Amount', 'Total', 'Monto'],
+            'vehicle_number' => ['Vehicle Number', 'Vehicle', 'Vehicle_Number', 'Vehiculo']
         ];
         
-        $headers = ['columns' => [], 'header_row' => 1];
-        $max_row_to_check = min(5, $worksheet->getHighestRow());
+        $found_headers = [];
+        $header_row = 1;
         
-        for ($row = 1; $row <= $max_row_to_check; $row++) {
-            $highest_col = $worksheet->getHighestColumn();
-            $found_headers = 0;
-            $temp_columns = [];
+        // Buscar en las primeras 10 filas
+        for ($row = 1; $row <= 10; $row++) {
+            $headers_in_row = [];
             
-            for ($col = 'A'; $col <= $highest_col; $col++) {
-                $cell_value = strtolower(trim($worksheet->getCell($col . $row)->getCalculatedValue() ?? ''));
+            for ($col = 'A'; $col <= 'Z'; $col++) {
+                $cell_value = trim($worksheet->getCell($col . $row)->getValue());
                 
-                foreach ($possible_headers as $field => $variations) {
-                    foreach ($variations as $variation) {
-                        if ($cell_value === $variation || strpos($cell_value, $variation) !== false) {
-                            $temp_columns[$field] = $col;
-                            $found_headers++;
+                foreach ($possible_headers as $field => $header_variants) {
+                    foreach ($header_variants as $variant) {
+                        if (strcasecmp($cell_value, $variant) === 0) {
+                            $headers_in_row[$field] = $col;
                             break 2;
                         }
                     }
                 }
             }
             
-            // Requerimos al menos 5 headers críticos
-            if ($found_headers >= 5) {
-                $headers['columns'] = $temp_columns;
-                $headers['header_row'] = $row;
+            if (count($headers_in_row) >= 4) { // Al menos 4 headers encontrados
+                $found_headers = $headers_in_row;
+                $header_row = $row;
                 break;
             }
         }
         
-        return $headers;
+        return [
+            'columns' => $found_headers,
+            'header_row' => $header_row
+        ];
     }
     
     /**
      * Filtrar datos por empresas seleccionadas
-     * Extrae caracteres 4-6 del Vehicle Number para determinar empresa
      */
     private function filterByCompanies($raw_data) {
         if (empty($this->selected_companies)) {
-            return $raw_data; // Si no hay filtro, devolver todo
+            return $raw_data; // Si no hay filtro, devolver todos
         }
         
         $filtered_data = [];
@@ -252,10 +308,8 @@ class MartinMarietaProcessor {
             $vehicle_number = $row['vehicle_number'] ?? '';
             
             if (strlen($vehicle_number) >= 6) {
-                // Extraer caracteres 4-6 (posiciones 3-5 en índice 0)
-                $company_identifier = substr($vehicle_number, 3, 3);
+                $company_identifier = substr($vehicle_number, 3, 3); // Caracteres 4-6
                 
-                // Verificar si esta empresa está en las seleccionadas
                 if (in_array($company_identifier, $this->selected_companies)) {
                     $row['company_identifier'] = $company_identifier;
                     $filtered_data[] = $row;
@@ -267,15 +321,19 @@ class MartinMarietaProcessor {
     }
     
     /**
-     * Guardar trips extraídos en la base de datos
+     * Guardar trips en base de datos
      */
     private function saveTrips($filtered_data) {
+        if (empty($filtered_data)) {
+            return 0;
+        }
+        
         $saved_count = 0;
         
         foreach ($filtered_data as $row) {
-            // Buscar company_id por identifier
+            // Buscar empresa por identificador
             $company = $this->db->fetch(
-                "SELECT id FROM companies WHERE identifier = ? AND is_active = 1",
+                "SELECT * FROM companies WHERE company_identifier = ? AND is_active = 1",
                 [$row['company_identifier']]
             );
             
@@ -290,8 +348,8 @@ class MartinMarietaProcessor {
                     'voucher_id' => $this->voucher_id,
                     'company_id' => $company['id'],
                     'trip_date' => $row['ship_date'],
-                    'location' => $row['location'],
-                    'ticket_number' => $row['ticket_number'],
+                    'location' => $row['location'],              // ✅ AHORA CORRECTO: "16431"
+                    'ticket_number' => $row['ticket_number'],    // ✅ AHORA CORRECTO: "31733474"
                     'haul_rate' => $row['haul_rate'],
                     'quantity' => $row['quantity'],
                     'amount' => $row['amount'],
@@ -303,6 +361,8 @@ class MartinMarietaProcessor {
                 $trip_id = $this->db->insert('trips', $trip_data);
                 if ($trip_id) {
                     $saved_count++;
+                    $this->logger->log(null, 'TRIP_SAVED', 
+                        "Trip guardado: Location={$row['location']}, Ticket={$row['ticket_number']}, Vehicle={$row['vehicle_number']}");
                 }
                 
             } catch (Exception $e) {
@@ -395,46 +455,4 @@ class MartinMarietaProcessor {
         
         $this->db->update('vouchers', $update_data, 'id = ?', [$this->voucher_id]);
     }
-    
-    /**
-     * Obtener empresas disponibles para selección
-     */
-    public static function getAvailableCompanies() {
-        $db = Database::getInstance();
-        return $db->fetchAll(
-            "SELECT id, name, identifier, capital_percentage FROM companies WHERE is_active = 1 ORDER BY name"
-        );
-    }
-    
-    /**
-     * Previsualizar datos antes de procesamiento
-     */
-    public function preview($max_rows = 10) {
-        try {
-            $raw_data = [];
-            if ($this->file_info['file_format'] === 'pdf') {
-                $raw_data = $this->extractFromPDF();
-            } else {
-                $raw_data = $this->extractFromExcel();
-            }
-            
-            // Limitar resultados para preview
-            $preview_data = array_slice($raw_data, 0, $max_rows);
-            
-            return [
-                'success' => true,
-                'total_rows' => count($raw_data),
-                'preview_rows' => count($preview_data),
-                'data' => $preview_data,
-                'companies_found' => $this->getCompaniesFound($raw_data)
-            ];
-            
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
 }
-?>

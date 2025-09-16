@@ -1,19 +1,19 @@
 <?php
 /**
- * API Process File - VERSIÓN DEBUG LIMPIA
+ * 🔧 API FINAL CORREGIDA: process-file.php
+ * ❌ ELIMINADO: TODO el código que creaba datos falsos (PLANT 082, T840437)
+ * ✅ AGREGADO: Solo uso real de MartinMarietaProcessor
+ * ✅ CORREGIDO: Formato JSON de entrada desde frontend
+ * 
  * Ruta: /api/process-file.php
  */
 
-// LIMPIAR CUALQUIER OUTPUT PREVIO
-ob_clean();
+// Limpiar cualquier output previo
+if (ob_get_level()) {
+    ob_end_clean();
+}
 
-// HEADERS JSON INMEDIATOS
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST');
-header('Access-Control-Allow-Headers: Content-Type');
-
-// SUPRIMIR ERRORES DE PHP QUE ROMPEN EL JSON
 error_reporting(0);
 ini_set('display_errors', 0);
 
@@ -30,129 +30,140 @@ try {
         throw new Exception('Método no permitido');
     }
     
-    // Obtener datos JSON
-    $input = json_decode(file_get_contents('php://input'), true);
+    // ✅ OBTENER PARÁMETROS DESDE JSON (NO $_POST)
+    $raw_input = file_get_contents('php://input');
     
-    if (!$input || !isset($input['voucher_id'])) {
-        throw new Exception('Datos inválidos - se requiere voucher_id');
+    if (empty($raw_input)) {
+        throw new Exception('No se recibieron datos de entrada');
     }
     
-    $voucher_id = intval($input['voucher_id']);
-    $companies = $input['companies'] ?? [];
+    $input = json_decode($raw_input, true);
     
-    if ($voucher_id <= 0) {
-        throw new Exception('ID de voucher inválido');
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        throw new Exception('Error decodificando JSON: ' . json_last_error_msg());
     }
     
-    if (empty($companies)) {
-        throw new Exception('Se requiere al menos una empresa');
+    $voucher_id = $input['voucher_id'] ?? null;
+    $selected_companies = $input['companies'] ?? [];  // Mapear correctamente
+    
+    if (!$voucher_id) {
+        throw new Exception('voucher_id es requerido');
     }
     
-    // INCLUDES SIN MOSTRAR ERRORES
+    if (empty($selected_companies)) {
+        throw new Exception('companies es requerido');
+    }
+    
+    // Incluir dependencias REALES
     require_once '../config/config.php';
     require_once '../classes/Database.php';
+    require_once '../classes/Logger.php';
+    require_once '../classes/MartinMarietaProcessor.php';  // ✅ PROCESSOR REAL
     
     $db = Database::getInstance();
+    $logger = new Logger();
     
-    // Verificar voucher
+    // Verificar que el voucher existe y no está procesado
     $voucher = $db->fetch("SELECT * FROM vouchers WHERE id = ?", [$voucher_id]);
     
     if (!$voucher) {
         throw new Exception('Voucher no encontrado');
     }
     
-    // Verificar estado
     if ($voucher['status'] === 'processed') {
+        // Si ya está procesado, devolver éxito sin procesar de nuevo
         echo json_encode([
             'success' => true,
-            'message' => 'Voucher ya procesado',
+            'message' => 'Voucher ya está procesado',
             'data' => [
                 'voucher_id' => $voucher_id,
-                'status' => 'processed'
+                'status' => 'processed',
+                'trips_processed' => 0,
+                'was_already_processed' => true
             ]
         ]);
         exit;
     }
     
     if ($voucher['status'] === 'processing') {
-        throw new Exception('Voucher ya en procesamiento');
+        throw new Exception('Voucher ya está siendo procesado');
     }
     
-    // SIMULACIÓN DE PROCESAMIENTO EXITOSO (por ahora)
-    // Cambiar estado a processing
-    $db->update('vouchers', [
-        'status' => 'processing'
-    ], 'id = ?', [$voucher_id]);
+    // Verificar que el archivo existe
+    if (!file_exists($voucher['file_path'])) {
+        throw new Exception('Archivo del voucher no encontrado: ' . $voucher['file_path']);
+    }
     
-    // Simular procesamiento con delay
-    sleep(1);
+    $logger->log($_SESSION['user_id'], 'PROCESSING_API_START', "Iniciando procesamiento API para voucher: {$voucher_id}");
     
-    // CREAR TRIPS DE PRUEBA
-    $trips_created = 0;
-    $company_mapping = [
-        'JAV' => 1, // Johnson & Associates LLC
-        'MAR' => 2, // Martin Construction Company  
-        'BRN' => 3, // Brown Transport Solutions
-        'WIL' => 4  // Wilson Logistics Corp
-    ];
-    
-    foreach ($companies as $company_code) {
-        if (!isset($company_mapping[$company_code])) continue;
+    // ✅ USAR PROCESSOR REAL - NUNCA MÁS DATOS FALSOS
+    try {
+        // Crear instancia del processor real
+        $processor = new MartinMarietaProcessor($voucher_id, $selected_companies);
         
-        $company_id = $company_mapping[$company_code];
+        // Procesar archivo real con MartinMarietaProcessor
+        $result = $processor->process();
         
-        // Crear 2-3 trips de ejemplo para cada empresa
-        for ($i = 1; $i <= rand(2, 3); $i++) {
-            $trip_data = [
-                'voucher_id' => $voucher_id,
-                'company_id' => $company_id,
-                'trip_date' => date('Y-m-d', strtotime("-" . rand(1, 30) . " days")),
-                'location' => 'PLANT ' . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT),
-                'ticket_number' => 'T' . rand(100000, 999999),
-                'haul_rate' => round(rand(15, 35) + (rand(0, 99) / 100), 2),
-                'quantity' => round(rand(8, 25) + (rand(0, 99) / 100), 2),
-                'amount' => 0, // Se calculará
-                'vehicle_number' => 'RMT' . $company_code . str_pad($i, 3, '0', STR_PAD_LEFT),
-                'source_row_number' => $trips_created + 1,
-                'extraction_confidence' => round(rand(85, 99) / 100, 2)
-            ];
+        if ($result['success']) {
+            $logger->log($_SESSION['user_id'], 'PROCESSING_API_SUCCESS', 
+                "Procesamiento completado - Trips guardados: {$result['saved_trips']}, Empresas: " . 
+                implode(',', $result['companies_found']));
             
-            // Calcular amount = haul_rate * quantity
-            $trip_data['amount'] = round($trip_data['haul_rate'] * $trip_data['quantity'], 2);
+            // ✅ RESPUESTA EXITOSA CON DATOS REALES ÚNICAMENTE
+            echo json_encode([
+                'success' => true,
+                'message' => 'Archivo procesado exitosamente con MartinMarietaProcessor',
+                'data' => [
+                    'voucher_id' => $voucher_id,
+                    'total_rows_found' => $result['total_rows'],
+                    'filtered_rows' => $result['filtered_rows'], 
+                    'trips_processed' => $result['saved_trips'],
+                    'companies_processed' => count($result['companies_found']),
+                    'companies_found' => $result['companies_found'],
+                    'status' => 'processed',
+                    'processor_used' => 'MartinMarietaProcessor',
+                    'processing_method' => 'real_pdf_extraction'
+                ]
+            ]);
             
-            $db->insert('trips', $trip_data);
-            $trips_created++;
+        } else {
+            throw new Exception('Error en procesamiento: ' . ($result['message'] ?? 'Error desconocido'));
         }
+        
+    } catch (Exception $processor_error) {
+        // Log del error específico del processor
+        $logger->log($_SESSION['user_id'], 'PROCESSING_ERROR', 
+            "Error en MartinMarietaProcessor: " . $processor_error->getMessage());
+        
+        // Marcar voucher como error
+        $db->update('vouchers', [
+            'status' => 'error',
+            'processing_notes' => $processor_error->getMessage()
+        ], 'id = ?', [$voucher_id]);
+        
+        throw new Exception('Error procesando archivo: ' . $processor_error->getMessage());
     }
-    
-    // Actualizar voucher como procesado
-    $db->update('vouchers', [
-        'status' => 'processed',
-        'total_rows_found' => $trips_created + rand(2, 5),
-        'valid_rows_extracted' => $trips_created,
-        'extraction_confidence' => 0.92
-    ], 'id = ?', [$voucher_id]);
-    
-    // Respuesta exitosa
-    echo json_encode([
-        'success' => true,
-        'message' => 'Archivo procesado exitosamente',
-        'data' => [
-            'voucher_id' => $voucher_id,
-            'trips_processed' => $trips_created,
-            'companies_processed' => count($companies),
-            'status' => 'processed'
-        ]
-    ]);
     
 } catch (Exception $e) {
-    // Log interno del error (sin mostrar)
-    error_log("Process API Error: " . $e->getMessage());
+    // Log interno del error
+    if (isset($logger) && isset($_SESSION['user_id'])) {
+        $logger->log($_SESSION['user_id'], 'PROCESSING_API_ERROR', 
+            "Error en API process-file: " . $e->getMessage());
+    } else {
+        error_log("Process API Error: " . $e->getMessage());
+    }
     
     http_response_code(400);
     echo json_encode([
         'success' => false,
-        'message' => $e->getMessage()
+        'message' => $e->getMessage(),
+        'error_type' => 'processing_error',
+        'debug_info' => [
+            'voucher_id' => $voucher_id ?? null,
+            'companies_count' => isset($selected_companies) ? count($selected_companies) : 0,
+            'has_logger' => isset($logger) ? 'yes' : 'no',
+            'has_session' => isset($_SESSION['user_id']) ? 'yes' : 'no'
+        ]
     ]);
 }
 
