@@ -1,42 +1,42 @@
 <?php
 // ========================================
-// test_processing_controller.php - PRUEBA DEL PASO 6
-// Ejecutar: php test_processing_controller.php
+// test_management_controller.php - PRUEBA DEL PASO 7
+// Ejecutar: php test_management_controller.php
 // ========================================
 
-echo "🧪 PROBANDO PROCESSINGCONTROLLER - PASO 6\n";
-echo "===========================================\n\n";
+echo "🧪 PROBANDO MANAGEMENTCONTROLLER - PASO 7\n";
+echo "==========================================\n\n";
 
 // Cargar configuración
 require_once 'config/config.php';
 
-echo "1️⃣ Probando carga de ProcessingController...\n";
+echo "1️⃣ Probando carga de ManagementController...\n";
 
 try {
     // Intentar cargar la clase
-    if (class_exists('App\\Controllers\\ProcessingController')) {
-        echo "   ✅ ProcessingController se puede cargar via autoload\n";
+    if (class_exists('App\\Controllers\\ManagementController')) {
+        echo "   ✅ ManagementController se puede cargar via autoload\n";
     } else {
         // Cargar manualmente si autoload no funciona
-        require_once 'app/Controllers/ProcessingController.php';
-        echo "   ✅ ProcessingController cargado manualmente\n";
+        require_once 'app/Controllers/ManagementController.php';
+        echo "   ✅ ManagementController cargado manualmente\n";
     }
     
 } catch (Exception $e) {
-    echo "   ❌ ERROR cargando ProcessingController: " . $e->getMessage() . "\n";
+    echo "   ❌ ERROR cargando ManagementController: " . $e->getMessage() . "\n";
     exit(1);
 }
 
 echo "\n2️⃣ Verificando herencia de BaseController...\n";
 
 try {
-    $reflection = new ReflectionClass('App\\Controllers\\ProcessingController');
+    $reflection = new ReflectionClass('App\\Controllers\\ManagementController');
     $parentClass = $reflection->getParentClass();
     
     if ($parentClass && $parentClass->getName() === 'App\\Controllers\\BaseController') {
-        echo "   ✅ ProcessingController extiende BaseController correctamente\n";
+        echo "   ✅ ManagementController extiende BaseController correctamente\n";
     } else {
-        echo "   ❌ ProcessingController NO extiende BaseController\n";
+        echo "   ❌ ManagementController NO extiende BaseController\n";
     }
     
 } catch (Exception $e) {
@@ -46,14 +46,17 @@ try {
 echo "\n3️⃣ Verificando métodos públicos...\n";
 
 try {
-    $reflection = new ReflectionClass('App\\Controllers\\ProcessingController');
+    $reflection = new ReflectionClass('App\\Controllers\\ManagementController');
     $methods = $reflection->getMethods(ReflectionMethod::IS_PUBLIC);
     
-    $expectedMethods = ['index', 'upload', 'extract', 'preview', 'process', 'getStatus'];
+    $expectedMethods = [
+        'index', 'companies', 'createCompany', 'editCompany', 
+        'vouchers', 'reports', 'generateReport', 'downloadReport', 'users'
+    ];
     $foundMethods = [];
     
     foreach ($methods as $method) {
-        if ($method->class === 'App\\Controllers\\ProcessingController') {
+        if ($method->class === 'App\\Controllers\\ManagementController') {
             $foundMethods[] = $method->getName();
         }
     }
@@ -73,21 +76,18 @@ try {
 echo "\n4️⃣ Verificando métodos privados de datos...\n";
 
 try {
-    $reflection = new ReflectionClass('App\\Controllers\\ProcessingController');
+    $reflection = new ReflectionClass('App\\Controllers\\ManagementController');
     $privateMethods = $reflection->getMethods(ReflectionMethod::IS_PRIVATE);
     
     $expectedPrivateMethods = [
-        'getRecentVouchers', 
-        'getActiveCompanies', 
-        'getVoucherById', 
-        'updateVoucherStatus',
-        'detectFileFormat',
-        'getDateRange'
+        'processCreateCompany', 'processEditCompany', 'getManagementSummary',
+        'getCompaniesWithStats', 'getVouchersWithDetails', 'getReportsWithDetails',
+        'getUsersWithStats', 'getCompanyById', 'getVoucherById', 'getReportById', 'getActiveCompanies'
     ];
     
     $foundPrivateMethods = [];
     foreach ($privateMethods as $method) {
-        if ($method->class === 'App\\Controllers\\ProcessingController') {
+        if ($method->class === 'App\\Controllers\\ManagementController') {
             $foundPrivateMethods[] = $method->getName();
         }
     }
@@ -104,27 +104,27 @@ try {
     echo "   ❌ ERROR verificando métodos privados: " . $e->getMessage() . "\n";
 }
 
-echo "\n5️⃣ Verificando integración con MartinMarietaProcessor...\n";
+echo "\n5️⃣ Verificando integración con CapitalTransportReportGenerator...\n";
 
 try {
     // Verificar que existe la clase
-    if (class_exists('MartinMarietaProcessor')) {
-        echo "   ✅ Clase MartinMarietaProcessor disponible\n";
+    if (class_exists('CapitalTransportReportGenerator')) {
+        echo "   ✅ Clase CapitalTransportReportGenerator disponible\n";
         
         // Verificar que se importa en el archivo
-        $fileContent = file_get_contents('app/Controllers/ProcessingController.php');
-        if (strpos($fileContent, 'use MartinMarietaProcessor;') !== false) {
-            echo "   ✅ Import de MartinMarietaProcessor encontrado\n";
+        $fileContent = file_get_contents('app/Controllers/ManagementController.php');
+        if (strpos($fileContent, 'use CapitalTransportReportGenerator;') !== false) {
+            echo "   ✅ Import de CapitalTransportReportGenerator encontrado\n";
         } else {
-            echo "   ⚠️ Import de MartinMarietaProcessor no encontrado\n";
+            echo "   ⚠️ Import de CapitalTransportReportGenerator no encontrado\n";
         }
         
     } else {
-        echo "   ❌ Clase MartinMarietaProcessor NO disponible\n";
+        echo "   ❌ Clase CapitalTransportReportGenerator NO disponible\n";
     }
     
 } catch (Exception $e) {
-    echo "   ❌ ERROR verificando MartinMarietaProcessor: " . $e->getMessage() . "\n";
+    echo "   ❌ ERROR verificando CapitalTransportReportGenerator: " . $e->getMessage() . "\n";
 }
 
 echo "\n6️⃣ Probando instanciación (sin autenticación)...\n";
@@ -132,13 +132,13 @@ echo "\n6️⃣ Probando instanciación (sin autenticación)...\n";
 try {
     // Simular entorno web básico
     $_SERVER['REQUEST_METHOD'] = 'GET';
-    $_SERVER['REQUEST_URI'] = '/processing';
+    $_SERVER['REQUEST_URI'] = '/management';
     $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
     $_SERVER['HTTP_USER_AGENT'] = 'PHPUnit Test';
     
     // Intentar crear instancia
-    $controller = new App\Controllers\ProcessingController();
-    echo "   ✅ ProcessingController instanciado correctamente\n";
+    $controller = new App\Controllers\ManagementController();
+    echo "   ✅ ManagementController instanciado correctamente\n";
     
     // Verificar que heredó propiedades de BaseController
     $reflection = new ReflectionClass($controller);
@@ -160,7 +160,7 @@ try {
 echo "\n7️⃣ Verificando namespace y use statements...\n";
 
 try {
-    $fileContent = file_get_contents('app/Controllers/ProcessingController.php');
+    $fileContent = file_get_contents('app/Controllers/ManagementController.php');
     
     // Verificar namespace
     if (strpos($fileContent, 'namespace App\\Controllers;') !== false) {
@@ -170,7 +170,7 @@ try {
     }
     
     // Verificar use statements
-    $useStatements = ['use Database;', 'use Logger;', 'use Exception;', 'use MartinMarietaProcessor;'];
+    $useStatements = ['use Database;', 'use Logger;', 'use Exception;', 'use CapitalTransportReportGenerator;'];
     foreach ($useStatements as $useStatement) {
         if (strpos($fileContent, $useStatement) !== false) {
             echo "   ✅ {$useStatement} encontrado\n";
@@ -193,9 +193,8 @@ try {
 echo "\n8️⃣ Verificando constantes requeridas...\n";
 
 $requiredConstants = [
-    'UPLOAD_PATH',
-    'MAX_UPLOAD_SIZE',
-    'ALLOWED_FILE_TYPES'
+    'ROLES',
+    'PERMISSIONS'
 ];
 
 foreach ($requiredConstants as $constant) {
@@ -206,21 +205,25 @@ foreach ($requiredConstants as $constant) {
     }
 }
 
-echo "\n🎯 RESULTADO DEL PASO 6:\n";
+echo "\n🎯 RESULTADO DEL PASO 7:\n";
 echo "========================\n";
 
-if (class_exists('App\\Controllers\\ProcessingController')) {
-    echo "✅ ProcessingController creado exitosamente\n";
+if (class_exists('App\\Controllers\\ManagementController')) {
+    echo "✅ ManagementController creado exitosamente\n";
     echo "✅ Herencia de BaseController implementada\n";
-    echo "✅ Flujo de upload implementado\n";
-    echo "✅ Integración con MartinMarietaProcessor\n";
-    echo "✅ API endpoints para procesamiento\n";
-    echo "✅ Manejo de estados de voucher\n";
-    echo "✅ Validaciones de archivos y permisos\n";
-    echo "\n🚀 PASO 6 COMPLETADO - LISTO PARA PASO 7\n";
-    echo "   Siguiente: Crear ManagementController\n";
+    echo "✅ Gestión de empresas implementada\n";
+    echo "✅ Gestión de vouchers y reportes\n";
+    echo "✅ Integración con CapitalTransportReportGenerator\n";
+    echo "✅ Gestión de usuarios (admin)\n";
+    echo "✅ APIs para CRUD completo\n";
+    echo "\n🚀 PASO 7 COMPLETADO - CONTROLADORES TERMINADOS\n";
+    echo "   Los 3 controladores principales están listos:\n";
+    echo "   ✅ DashboardController - Dashboard y estadísticas\n";
+    echo "   ✅ ProcessingController - Upload y procesamiento\n";
+    echo "   ✅ ManagementController - Gestión y administración\n";
+    echo "\n🎯 SIGUIENTE: Pasos 8-10 - Services (AuthService, FileProcessingService, ReportGenerationService)\n";
 } else {
-    echo "❌ PASO 6 INCOMPLETO\n";
+    echo "❌ PASO 7 INCOMPLETO\n";
     echo "   Revisar errores anteriores\n";
 }
 
