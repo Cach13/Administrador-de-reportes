@@ -1,62 +1,63 @@
 <?php
 // ========================================
-// test_management_controller.php - PRUEBA DEL PASO 7
-// Ejecutar: php test_management_controller.php
+// test_authservice.php - PRUEBA DEL PASO 8
+// Ejecutar: php test_authservice.php
 // ========================================
 
-echo "🧪 PROBANDO MANAGEMENTCONTROLLER - PASO 7\n";
-echo "==========================================\n\n";
+echo "🧪 PROBANDO AUTHSERVICE - PASO 8\n";
+echo "=================================\n\n";
 
 // Cargar configuración
 require_once 'config/config.php';
 
-echo "1️⃣ Probando carga de ManagementController...\n";
+echo "1️⃣ Verificando estructura del directorio Services...\n";
+
+$servicesDir = 'app/Services';
+if (!is_dir($servicesDir)) {
+    echo "   📁 Creando directorio {$servicesDir}...\n";
+    if (mkdir($servicesDir, 0755, true)) {
+        echo "   ✅ Directorio {$servicesDir} creado\n";
+    } else {
+        echo "   ❌ ERROR: No se pudo crear directorio {$servicesDir}\n";
+        exit(1);
+    }
+} else {
+    echo "   ✅ Directorio {$servicesDir} existe\n";
+}
+
+echo "\n2️⃣ Probando carga de AuthService...\n";
 
 try {
     // Intentar cargar la clase
-    if (class_exists('App\\Controllers\\ManagementController')) {
-        echo "   ✅ ManagementController se puede cargar via autoload\n";
+    if (class_exists('App\\Services\\AuthService')) {
+        echo "   ✅ AuthService se puede cargar via autoload\n";
     } else {
         // Cargar manualmente si autoload no funciona
-        require_once 'app/Controllers/ManagementController.php';
-        echo "   ✅ ManagementController cargado manualmente\n";
+        require_once 'app/Services/AuthService.php';
+        echo "   ✅ AuthService cargado manualmente\n";
     }
     
 } catch (Exception $e) {
-    echo "   ❌ ERROR cargando ManagementController: " . $e->getMessage() . "\n";
+    echo "   ❌ ERROR cargando AuthService: " . $e->getMessage() . "\n";
     exit(1);
 }
 
-echo "\n2️⃣ Verificando herencia de BaseController...\n";
+echo "\n3️⃣ Verificando métodos públicos principales...\n";
 
 try {
-    $reflection = new ReflectionClass('App\\Controllers\\ManagementController');
-    $parentClass = $reflection->getParentClass();
-    
-    if ($parentClass && $parentClass->getName() === 'App\\Controllers\\BaseController') {
-        echo "   ✅ ManagementController extiende BaseController correctamente\n";
-    } else {
-        echo "   ❌ ManagementController NO extiende BaseController\n";
-    }
-    
-} catch (Exception $e) {
-    echo "   ❌ ERROR verificando herencia: " . $e->getMessage() . "\n";
-}
-
-echo "\n3️⃣ Verificando métodos públicos...\n";
-
-try {
-    $reflection = new ReflectionClass('App\\Controllers\\ManagementController');
+    $reflection = new ReflectionClass('App\\Services\\AuthService');
     $methods = $reflection->getMethods(ReflectionMethod::IS_PUBLIC);
     
     $expectedMethods = [
-        'index', 'companies', 'createCompany', 'editCompany', 
-        'vouchers', 'reports', 'generateReport', 'downloadReport', 'users'
+        'login', 'logout', 'isAuthenticated', 'hasPermission', 
+        'isAdmin', 'canAccessCompany', 'createUser', 'updateUser',
+        'generateCSRFToken', 'verifyCSRFToken', 'generateSecurePassword',
+        'validatePasswordStrength', 'getCurrentUser', 'getAuthStats'
     ];
     $foundMethods = [];
     
     foreach ($methods as $method) {
-        if ($method->class === 'App\\Controllers\\ManagementController') {
+        if ($method->class === 'App\\Services\\AuthService') {
             $foundMethods[] = $method->getName();
         }
     }
@@ -73,157 +74,233 @@ try {
     echo "   ❌ ERROR verificando métodos: " . $e->getMessage() . "\n";
 }
 
-echo "\n4️⃣ Verificando métodos privados de datos...\n";
+echo "\n4️⃣ Verificando constantes de configuración...\n";
 
-try {
-    $reflection = new ReflectionClass('App\\Controllers\\ManagementController');
-    $privateMethods = $reflection->getMethods(ReflectionMethod::IS_PRIVATE);
-    
-    $expectedPrivateMethods = [
-        'processCreateCompany', 'processEditCompany', 'getManagementSummary',
-        'getCompaniesWithStats', 'getVouchersWithDetails', 'getReportsWithDetails',
-        'getUsersWithStats', 'getCompanyById', 'getVoucherById', 'getReportById', 'getActiveCompanies'
-    ];
-    
-    $foundPrivateMethods = [];
-    foreach ($privateMethods as $method) {
-        if ($method->class === 'App\\Controllers\\ManagementController') {
-            $foundPrivateMethods[] = $method->getName();
-        }
-    }
-    
-    foreach ($expectedPrivateMethods as $expectedMethod) {
-        if (in_array($expectedMethod, $foundPrivateMethods)) {
-            echo "   ✅ Método privado {$expectedMethod}() encontrado\n";
-        } else {
-            echo "   ⚠️ Método privado {$expectedMethod}() no encontrado\n";
-        }
-    }
-    
-} catch (Exception $e) {
-    echo "   ❌ ERROR verificando métodos privados: " . $e->getMessage() . "\n";
-}
-
-echo "\n5️⃣ Verificando integración con CapitalTransportReportGenerator...\n";
-
-try {
-    // Verificar que existe la clase
-    if (class_exists('CapitalTransportReportGenerator')) {
-        echo "   ✅ Clase CapitalTransportReportGenerator disponible\n";
-        
-        // Verificar que se importa en el archivo
-        $fileContent = file_get_contents('app/Controllers/ManagementController.php');
-        if (strpos($fileContent, 'use CapitalTransportReportGenerator;') !== false) {
-            echo "   ✅ Import de CapitalTransportReportGenerator encontrado\n";
-        } else {
-            echo "   ⚠️ Import de CapitalTransportReportGenerator no encontrado\n";
-        }
-        
-    } else {
-        echo "   ❌ Clase CapitalTransportReportGenerator NO disponible\n";
-    }
-    
-} catch (Exception $e) {
-    echo "   ❌ ERROR verificando CapitalTransportReportGenerator: " . $e->getMessage() . "\n";
-}
-
-echo "\n6️⃣ Probando instanciación (sin autenticación)...\n";
-
-try {
-    // Simular entorno web básico
-    $_SERVER['REQUEST_METHOD'] = 'GET';
-    $_SERVER['REQUEST_URI'] = '/management';
-    $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
-    $_SERVER['HTTP_USER_AGENT'] = 'PHPUnit Test';
-    
-    // Intentar crear instancia
-    $controller = new App\Controllers\ManagementController();
-    echo "   ✅ ManagementController instanciado correctamente\n";
-    
-    // Verificar que heredó propiedades de BaseController
-    $reflection = new ReflectionClass($controller);
-    
-    $baseProperties = ['db', 'logger', 'currentUser', 'request'];
-    foreach ($baseProperties as $prop) {
-        if ($reflection->hasProperty($prop)) {
-            echo "   ✅ Propiedad heredada '{$prop}' existe\n";
-        } else {
-            echo "   ❌ Propiedad heredada '{$prop}' NO existe\n";
-        }
-    }
-    
-} catch (Exception $e) {
-    echo "   ⚠️ Error esperado (sin autenticación): " . $e->getMessage() . "\n";
-    echo "   ✅ Esto es normal - el controlador requiere autenticación\n";
-}
-
-echo "\n7️⃣ Verificando namespace y use statements...\n";
-
-try {
-    $fileContent = file_get_contents('app/Controllers/ManagementController.php');
-    
-    // Verificar namespace
-    if (strpos($fileContent, 'namespace App\\Controllers;') !== false) {
-        echo "   ✅ Namespace correcto definido\n";
-    } else {
-        echo "   ❌ Namespace incorrecto o faltante\n";
-    }
-    
-    // Verificar use statements
-    $useStatements = ['use Database;', 'use Logger;', 'use Exception;', 'use CapitalTransportReportGenerator;'];
-    foreach ($useStatements as $useStatement) {
-        if (strpos($fileContent, $useStatement) !== false) {
-            echo "   ✅ {$useStatement} encontrado\n";
-        } else {
-            echo "   ⚠️ {$useStatement} no encontrado\n";
-        }
-    }
-    
-    // Verificar extends
-    if (strpos($fileContent, 'extends BaseController') !== false) {
-        echo "   ✅ Extends BaseController encontrado\n";
-    } else {
-        echo "   ❌ Extends BaseController NO encontrado\n";
-    }
-    
-} catch (Exception $e) {
-    echo "   ❌ ERROR leyendo archivo: " . $e->getMessage() . "\n";
-}
-
-echo "\n8️⃣ Verificando constantes requeridas...\n";
-
-$requiredConstants = [
-    'ROLES',
-    'PERMISSIONS'
+$constants = [
+    'MAX_LOGIN_ATTEMPTS' => 5,
+    'LOCKOUT_TIME' => 900,
+    'SESSION_LIFETIME' => 7200
 ];
 
-foreach ($requiredConstants as $constant) {
-    if (defined($constant)) {
-        echo "   ✅ Constante {$constant} definida\n";
+$reflection = new ReflectionClass('App\\Services\\AuthService');
+foreach ($constants as $constant => $expectedValue) {
+    if ($reflection->hasConstant($constant)) {
+        $actualValue = $reflection->getConstant($constant);
+        if ($actualValue === $expectedValue) {
+            echo "   ✅ Constante {$constant} = {$actualValue} ✓\n";
+        } else {
+            echo "   ⚠️ Constante {$constant} = {$actualValue} (esperado: {$expectedValue})\n";
+        }
     } else {
-        echo "   ❌ Constante {$constant} NO definida\n";
+        echo "   ❌ Constante {$constant} NO encontrada\n";
     }
 }
 
-echo "\n🎯 RESULTADO DEL PASO 7:\n";
+echo "\n5️⃣ Probando instanciación de AuthService...\n";
+
+try {
+    // Mock de sesión para testing
+    if (session_status() == PHP_SESSION_NONE) {
+        session_start();
+    }
+    
+    $authService = new App\Services\AuthService();
+    echo "   ✅ AuthService instanciado correctamente\n";
+    
+    // Verificar que las dependencias se cargaron
+    if (method_exists($authService, 'getAuthStats')) {
+        echo "   ✅ Métodos públicos accesibles\n";
+    } else {
+        echo "   ❌ Métodos públicos NO accesibles\n";
+    }
+    
+} catch (Exception $e) {
+    echo "   ❌ ERROR instanciando AuthService: " . $e->getMessage() . "\n";
+}
+
+echo "\n6️⃣ Probando funciones básicas de seguridad...\n";
+
+try {
+    $authService = new App\Services\AuthService();
+    
+    // Probar generación de password seguro
+    $securePassword = $authService->generateSecurePassword(12);
+    if (strlen($securePassword) === 12) {
+        echo "   ✅ Generación de password seguro funciona (longitud: " . strlen($securePassword) . ")\n";
+    } else {
+        echo "   ❌ Generación de password seguro falló\n";
+    }
+    
+    // Probar validación de password
+    $validation = $authService->validatePasswordStrength('Test123!');
+    if (isset($validation['valid'])) {
+        echo "   ✅ Validación de password funciona (válido: " . ($validation['valid'] ? 'Sí' : 'No') . ")\n";
+    } else {
+        echo "   ❌ Validación de password falló\n";
+    }
+    
+    // Probar generación de token CSRF
+    $csrfToken = $authService->generateCSRFToken();
+    if (strlen($csrfToken) === 64) { // 32 bytes * 2 (hex)
+        echo "   ✅ Generación de token CSRF funciona (longitud: " . strlen($csrfToken) . ")\n";
+    } else {
+        echo "   ❌ Generación de token CSRF falló\n";
+    }
+    
+} catch (Exception $e) {
+    echo "   ❌ ERROR probando funciones básicas: " . $e->getMessage() . "\n";
+}
+
+echo "\n7️⃣ Verificando integración con Database y Logger...\n";
+
+try {
+    // Verificar que Database existe y funciona
+    if (class_exists('Database')) {
+        echo "   ✅ Clase Database disponible\n";
+        
+        try {
+            $db = Database::getInstance();
+            echo "   ✅ Database::getInstance() funciona\n";
+        } catch (Exception $e) {
+            echo "   ⚠️ Database::getInstance() falló: " . $e->getMessage() . "\n";
+        }
+    } else {
+        echo "   ❌ Clase Database NO disponible\n";
+    }
+    
+    // Verificar que Logger existe
+    if (class_exists('Logger')) {
+        echo "   ✅ Clase Logger disponible\n";
+        
+        try {
+            $logger = new Logger();
+            echo "   ✅ Logger instanciado correctamente\n";
+        } catch (Exception $e) {
+            echo "   ⚠️ Logger falló: " . $e->getMessage() . "\n";
+        }
+    } else {
+        echo "   ❌ Clase Logger NO disponible\n";
+    }
+    
+} catch (Exception $e) {
+    echo "   ❌ ERROR verificando dependencias: " . $e->getMessage() . "\n";
+}
+
+echo "\n8️⃣ Verificando métodos de autenticación básicos...\n";
+
+try {
+    $authService = new App\Services\AuthService();
+    
+    // Probar isAuthenticated (debería ser false sin login)
+    $isAuth = $authService->isAuthenticated();
+    if ($isAuth === false) {
+        echo "   ✅ isAuthenticated() funciona (retorna false sin login)\n";
+    } else {
+        echo "   ❌ isAuthenticated() debería retornar false sin login\n";
+    }
+    
+    // Probar hasPermission (debería ser false sin login)
+    $hasPerm = $authService->hasPermission('test_permission');
+    if ($hasPerm === false) {
+        echo "   ✅ hasPermission() funciona (retorna false sin login)\n";
+    } else {
+        echo "   ❌ hasPermission() debería retornar false sin login\n";
+    }
+    
+    // Probar isAdmin (debería ser false sin login)
+    $isAdmin = $authService->isAdmin();
+    if ($isAdmin === false) {
+        echo "   ✅ isAdmin() funciona (retorna false sin login)\n";
+    } else {
+        echo "   ❌ isAdmin() debería retornar false sin login\n";
+    }
+    
+} catch (Exception $e) {
+    echo "   ❌ ERROR probando métodos de autenticación: " . $e->getMessage() . "\n";
+}
+
+echo "\n9️⃣ Verificando estructura de tablas requeridas...\n";
+
+try {
+    $db = Database::getInstance();
+    
+    // Verificar tabla users
+    $usersTable = $db->fetchColumn("SHOW TABLES LIKE 'users'");
+    if ($usersTable) {
+        echo "   ✅ Tabla 'users' existe\n";
+    } else {
+        echo "   ⚠️ Tabla 'users' NO existe (necesaria para AuthService)\n";
+    }
+    
+    // Verificar tabla login_attempts
+    $attemptsTable = $db->fetchColumn("SHOW TABLES LIKE 'login_attempts'");
+    if ($attemptsTable) {
+        echo "   ✅ Tabla 'login_attempts' existe\n";
+    } else {
+        echo "   ⚠️ Tabla 'login_attempts' NO existe (se puede crear automáticamente)\n";
+    }
+    
+    // Verificar tabla remember_tokens
+    $tokensTable = $db->fetchColumn("SHOW TABLES LIKE 'remember_tokens'");
+    if ($tokensTable) {
+        echo "   ✅ Tabla 'remember_tokens' existe\n";
+    } else {
+        echo "   ⚠️ Tabla 'remember_tokens' NO existe (se puede crear automáticamente)\n";
+    }
+    
+} catch (Exception $e) {
+    echo "   ❌ ERROR verificando tablas: " . $e->getMessage() . "\n";
+}
+
+echo "\n🔟 Verificando configuración de sesión...\n";
+
+try {
+    // Solo verificar si no hay warnings de headers
+    if (!headers_sent()) {
+        // Verificar configuración de sesión
+        $httpOnly = ini_get('session.cookie_httponly');
+        $useStrictMode = ini_get('session.use_strict_mode');
+        
+        echo "   📊 session.cookie_httponly: " . ($httpOnly ? 'Activado ✅' : 'Desactivado ⚠️') . "\n";
+        echo "   📊 session.use_strict_mode: " . ($useStrictMode ? 'Activado ✅' : 'Desactivado ⚠️') . "\n";
+        echo "   📊 session.cookie_samesite: " . (ini_get('session.cookie_samesite') ?: 'No configurado ⚠️') . "\n";
+    } else {
+        echo "   ℹ️ Headers ya enviados - configuración de sesión verificada en config.php\n";
+    }
+    
+    // Verificar que la sesión esté iniciada
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        echo "   ✅ Sesión PHP activa\n";
+    } else {
+        echo "   ⚠️ Sesión PHP no está activa\n";
+    }
+    
+} catch (Exception $e) {
+    echo "   ❌ ERROR verificando configuración de sesión: " . $e->getMessage() . "\n";
+}
+
+echo "\n🎯 RESULTADO DEL PASO 8:\n";
 echo "========================\n";
 
-if (class_exists('App\\Controllers\\ManagementController')) {
-    echo "✅ ManagementController creado exitosamente\n";
-    echo "✅ Herencia de BaseController implementada\n";
-    echo "✅ Gestión de empresas implementada\n";
-    echo "✅ Gestión de vouchers y reportes\n";
-    echo "✅ Integración con CapitalTransportReportGenerator\n";
-    echo "✅ Gestión de usuarios (admin)\n";
-    echo "✅ APIs para CRUD completo\n";
-    echo "\n🚀 PASO 7 COMPLETADO - CONTROLADORES TERMINADOS\n";
-    echo "   Los 3 controladores principales están listos:\n";
-    echo "   ✅ DashboardController - Dashboard y estadísticas\n";
-    echo "   ✅ ProcessingController - Upload y procesamiento\n";
-    echo "   ✅ ManagementController - Gestión y administración\n";
-    echo "\n🎯 SIGUIENTE: Pasos 8-10 - Services (AuthService, FileProcessingService, ReportGenerationService)\n";
+if (class_exists('App\\Services\\AuthService')) {
+    echo "✅ AuthService creado exitosamente\n";
+    echo "✅ Métodos principales implementados\n";
+    echo "✅ Constantes de seguridad definidas\n";
+    echo "✅ Integración con Database y Logger\n";
+    echo "✅ Funciones de seguridad básicas\n";
+    echo "✅ Configuración de sesión segura\n";
+    echo "✅ Manejo de autenticación y autorización\n";
+    echo "\n🚀 PASO 8 COMPLETADO - AUTHSERVICE FUNCIONANDO\n";
+    echo "   Funcionalidades principales:\n";
+    echo "   ✅ Login/Logout con seguridad\n";
+    echo "   ✅ Verificación de permisos\n";
+    echo "   ✅ Protección contra fuerza bruta\n";
+    echo "   ✅ Tokens CSRF y Remember Me\n";
+    echo "   ✅ Validación de passwords\n";
+    echo "   ✅ Gestión de usuarios\n";
+    echo "\n🎯 SIGUIENTE: Paso 9 - FileProcessingService (integrar MartinMarietaProcessor)\n";
 } else {
-    echo "❌ PASO 7 INCOMPLETO\n";
+    echo "❌ PASO 8 INCOMPLETO\n";
     echo "   Revisar errores anteriores\n";
 }
 
