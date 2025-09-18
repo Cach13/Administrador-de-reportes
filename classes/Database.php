@@ -1,7 +1,7 @@
 <?php
 // ========================================
-// classes/Database.php - VERSIÓN MEJORADA PARA AUTHSERVICE
-// Mantiene compatibilidad total + nuevos métodos
+// classes/Database.php - VERSIÓN MEJORADA CON MÉTODO EXECUTE
+// Mantiene compatibilidad total + métodos faltantes
 // ========================================
 
 class Database {
@@ -55,6 +55,24 @@ class Database {
         }
     }
     
+    // ========================================
+    // 🆕 MÉTODO EXECUTE - PARA COMPATIBILIDAD CON MODELS
+    // ========================================
+    
+    /**
+     * Método execute para compatibilidad con Models
+     * Ejecuta SQL y devuelve TRUE/FALSE en lugar de statement
+     */
+    public function execute($sql, $params = []) {
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            return $stmt->execute($params);
+        } catch (PDOException $e) {
+            error_log("Database execute error: " . $e->getMessage() . " | SQL: " . $sql);
+            throw new Exception("Error ejecutando consulta: " . $e->getMessage());
+        }
+    }
+    
     public function fetch($sql, $params = []) {
         $stmt = $this->query($sql, $params);
         return $stmt->fetch();
@@ -66,7 +84,7 @@ class Database {
     }
     
     // ========================================
-    // 🆕 MÉTODO NUEVO: fetchColumn() - PARA AUTHSERVICE
+    // MÉTODO NUEVO: fetchColumn() - PARA AUTHSERVICE
     // ========================================
     
     /**
@@ -85,7 +103,7 @@ class Database {
     }
     
     // ========================================
-    // 🆕 MÉTODO NUEVO: fetchOne() - ALIAS PARA COMPATIBILIDAD
+    // MÉTODO NUEVO: fetchOne() - ALIAS PARA COMPATIBILIDAD
     // ========================================
     
     /**
@@ -138,7 +156,7 @@ class Database {
     }
     
     // ========================================
-    // 🆕 MÉTODOS NUEVOS PARA AUTHSERVICE
+    // MÉTODOS NUEVOS PARA AUTHSERVICE
     // ========================================
     
     /**
@@ -250,7 +268,7 @@ class Database {
     }
     
     // ========================================
-    // 🆕 MÉTODOS DE DEBUGGING Y UTILIDADES
+    // MÉTODOS DE DEBUGGING Y UTILIDADES
     // ========================================
     
     /**
@@ -316,7 +334,7 @@ class Database {
     }
     
     // ========================================
-    // 🆕 MÉTODOS ESPECÍFICOS PARA AUTHSERVICE
+    // MÉTODOS ESPECÍFICOS PARA AUTHSERVICE
     // ========================================
     
     /**
@@ -386,7 +404,7 @@ class Database {
     }
     
     // ========================================
-    // 🆕 LOGGING MEJORADO
+    // LOGGING MEJORADO
     // ========================================
     
     /**
