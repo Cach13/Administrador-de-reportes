@@ -223,7 +223,7 @@ abstract class BaseRepository
         
         // Validar sort y order
         $sort = in_array($sort, $this->sortable) ? $sort : $this->defaultSort;
-        $order = in_array(strtoupper($order), ['ASC', 'DESC']) ? strtoupper($order) : $this->defaultOrder;
+        $order = in_array(strtoupper($order ?? ''), ['ASC', 'DESC']) ? strtoupper($order) : $this->defaultOrder;
         
         $where = [];
         $params = [];
@@ -445,3 +445,4 @@ abstract class BaseRepository
         return $this->db->fetchAll($sql, $params);
     }
 }
+?>
