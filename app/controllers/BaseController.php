@@ -1,7 +1,7 @@
 <?php
 // ========================================
-// app/Controllers/BaseController.php
-// Controlador base con funcionalidad común
+// app/Controllers/BaseController.php - ARREGLADO
+// Controlador base con funcionalidad común - SIN ERRORES DE CONSTANTES
 // ========================================
 
 namespace App\Controllers;
@@ -153,7 +153,7 @@ class BaseController
         }
         
         $userRole = $this->currentUser['role'];
-        $permissions = defined('PERMISSIONS') ? PERMISSIONS[$userRole] ?? [] : [];
+        $permissions = defined('PERMISSIONS') ? \PERMISSIONS[$userRole] ?? [] : [];
         
         return in_array($permission, $permissions);
     }
@@ -283,13 +283,42 @@ class BaseController
             $this->sendErrorResponse('Tipo de archivo no permitido. Permitidos: ' . implode(', ', $allowedTypes));
         }
         
-        // Validar tamaño
-        $maxSizeBytes = $maxSize ?? (defined('MAX_UPLOAD_SIZE') ? MAX_UPLOAD_SIZE : 20971520);
+        // Validar tamaño - ARREGLADO: usar constantes globales correctamente
+        $maxSizeBytes = $maxSize ?? $this->getMaxUploadSize();
         if ($file['size'] > $maxSizeBytes) {
             $this->sendErrorResponse('Archivo demasiado grande. Máximo: ' . $this->formatBytes($maxSizeBytes));
         }
         
         return true;
+    }
+    
+    /**
+     * Obtener tamaño máximo de upload
+     */
+    private function getMaxUploadSize()
+    {
+        // Usar constante global si está definida, sino usar valor por defecto
+        if (defined('PROCESSING_MAX_FILE_SIZE')) {
+            return $this->parseSize(\PROCESSING_MAX_FILE_SIZE);
+        }
+        
+        // 20MB por defecto
+        return 20971520;
+    }
+    
+    /**
+     * Convertir string de tamaño a bytes
+     */
+    private function parseSize($size)
+    {
+        $unit = preg_replace('/[^bkmgtpezy]/i', '', $size);
+        $size = (int) preg_replace('/[^0-9\.]/', '', $size);
+        
+        if ($unit) {
+            $size = $size * pow(1024, stripos('bkmgtpezy', $unit[0]));
+        }
+        
+        return $size;
     }
     
     /**
@@ -344,7 +373,8 @@ class BaseController
      */
     protected function generateCSRFToken()
     {
-        $expiry = defined('CSRF_TOKEN_EXPIRY') ? CSRF_TOKEN_EXPIRY : 3600;
+        // ARREGLADO: usar constante global correctamente
+        $expiry = defined('CSRF_TOKEN_LIFETIME') ? \CSRF_TOKEN_LIFETIME : 3600;
         
         if (!isset($_SESSION['csrf_token']) || !isset($_SESSION['csrf_token_time']) || 
             (time() - $_SESSION['csrf_token_time']) > $expiry) {
@@ -408,7 +438,7 @@ class BaseController
     {
         $this->logActivity('ERROR', "[$code] $message" . ($details ? " - Details: $details" : ""), 'ERROR');
         
-        $isDebug = defined('APP_DEBUG') ? APP_DEBUG : false;
+        $isDebug = defined('APP_DEBUG') ? \APP_DEBUG : false;
         
         if ($isDebug) {
             $this->sendErrorResponse($message, 500, ['code' => $code, 'details' => $details]);
@@ -431,8 +461,8 @@ class BaseController
             'currentUser' => $this->currentUser,
             'isAuthenticated' => $this->isAuthenticated(),
             'isAdmin' => $this->isAdmin(),
-            'appName' => defined('APP_NAME') ? APP_NAME : 'Transport System',
-            'appVersion' => defined('APP_VERSION') ? APP_VERSION : '1.0.0',
+            'appName' => defined('APP_NAME') ? \APP_NAME : 'Transport System',
+            'appVersion' => defined('APP_VERSION') ? \APP_VERSION : '1.0.0',
             'csrfToken' => $this->generateCSRFToken(),
             'flashMessage' => $_SESSION['flash_message'] ?? null,
             'flashType' => $_SESSION['flash_type'] ?? null
@@ -448,7 +478,7 @@ class BaseController
         extract($viewData);
         
         // Incluir vista
-        $viewsPath = defined('VIEWS_PATH') ? VIEWS_PATH : 'views';
+        $viewsPath = defined('VIEWS_PATH') ? \VIEWS_PATH : 'views';
         $viewFile = $viewsPath . '/' . $view . '.php';
         
         if (file_exists($viewFile)) {

@@ -1,7 +1,7 @@
 <?php
 // ========================================
-// app/Controllers/DashboardController.php
-// Controlador para el dashboard principal
+// app/Controllers/DashboardController.php - PASO 15 ARREGLADO
+// Controlador del dashboard principal - SIN ERRORES DE SINTAXIS
 // ========================================
 
 namespace App\Controllers;
@@ -11,14 +11,7 @@ use Logger;
 use Exception;
 
 /**
- * DashboardController - Controlador del dashboard principal
- * 
- * Funcionalidades:
- * - Mostrar estadísticas del sistema
- * - Actividad reciente
- * - Resumen de vouchers
- * - Gráficas básicas
- * - Estado del sistema
+ * DashboardController - Dashboard principal con estadísticas en tiempo real
  */
 class DashboardController extends BaseController
 {
@@ -31,16 +24,10 @@ class DashboardController extends BaseController
         $this->requireAuth();
         
         try {
-            // Obtener estadísticas generales
+            // Obtener todos los datos del dashboard
             $stats = $this->getSystemStats();
-            
-            // Obtener actividad reciente
             $recentActivity = $this->getRecentActivity();
-            
-            // Obtener vouchers pendientes
             $pendingVouchers = $this->getPendingVouchers();
-            
-            // Obtener reportes recientes
             $recentReports = $this->getRecentReports();
             
             // Log de acceso al dashboard
@@ -65,7 +52,6 @@ class DashboardController extends BaseController
      */
     public function getStats()
     {
-        // Verificar autenticación
         $this->requireAuth();
         
         try {
@@ -82,7 +68,6 @@ class DashboardController extends BaseController
      */
     public function getRecentActivityApi()
     {
-        // Verificar autenticación
         $this->requireAuth();
         
         try {
@@ -95,12 +80,33 @@ class DashboardController extends BaseController
     }
     
     /**
+     * API: Obtener datos completos del dashboard para refresh
+     */
+    public function getDashboardData()
+    {
+        $this->requireAuth();
+        
+        try {
+            $dashboardData = [
+                'stats' => $this->getSystemStats(),
+                'recentActivity' => $this->getRecentActivity(),
+                'pendingVouchers' => $this->getPendingVouchers(),
+                'systemHealth' => $this->getSystemHealth()
+            ];
+            
+            $this->sendSuccessResponse($dashboardData, 'Datos del dashboard obtenidos');
+            
+        } catch (Exception $e) {
+            $this->sendErrorResponse('Error obteniendo datos del dashboard: ' . $e->getMessage());
+        }
+    }
+    
+    /**
      * API: Obtener estado del sistema
      */
     public function getSystemHealth()
     {
-        // Verificar autenticación (solo admin)
-        $this->requirePermission('system_settings');
+        $this->requireAuth();
         
         try {
             $health = $this->checkSystemHealth();
@@ -112,7 +118,7 @@ class DashboardController extends BaseController
     }
     
     // ========================================
-    // MÉTODOS PRIVADOS PARA DATOS
+    // MÉTODOS PRIVADOS PARA OBTENER DATOS
     // ========================================
     
     /**
@@ -120,9 +126,9 @@ class DashboardController extends BaseController
      */
     private function getSystemStats()
     {
-        $stats = [];
-        
         try {
+            $stats = [];
+            
             // Estadísticas básicas
             $stats['totalCompanies'] = $this->db->fetch(
                 "SELECT COUNT(*) as total FROM companies WHERE is_active = 1"
@@ -143,7 +149,7 @@ class DashboardController extends BaseController
             // Estadísticas financieras
             $financialData = $this->db->fetch(
                 "SELECT 
-                    SUM(amount) as totalAmount,
+                    COALESCE(SUM(amount), 0) as totalAmount,
                     COUNT(DISTINCT voucher_id) as processedVouchers
                  FROM trips"
             );
@@ -154,7 +160,7 @@ class DashboardController extends BaseController
             // Estadísticas del mes actual
             $monthlyData = $this->db->fetch(
                 "SELECT 
-                    SUM(amount) as monthlyAmount,
+                    COALESCE(SUM(amount), 0) as monthlyAmount,
                     COUNT(*) as monthlyTrips
                  FROM trips 
                  WHERE MONTH(trip_date) = MONTH(CURRENT_DATE()) 
@@ -176,7 +182,11 @@ class DashboardController extends BaseController
             
             // Top 5 empresas por volumen
             $topCompanies = $this->db->fetchAll(
-                "SELECT c.name, c.identifier, COUNT(t.id) as trip_count, SUM(t.amount) as total_amount
+                "SELECT 
+                    c.name, 
+                    c.identifier, 
+                    COUNT(t.id) as trip_count, 
+                    COALESCE(SUM(t.amount), 0) as total_amount
                  FROM companies c
                  LEFT JOIN trips t ON c.id = t.company_id
                  WHERE c.is_active = 1
@@ -186,6 +196,39 @@ class DashboardController extends BaseController
             );
             
             $stats['topCompanies'] = $topCompanies;
+            
+            // Datos para gráficos mensuales (últimos 12 meses)
+            $monthlyTrends = $this->db->fetchAll(
+                "SELECT 
+                    DATE_FORMAT(trip_date, '%Y-%m') as month,
+                    COUNT(*) as trip_count,
+                    COALESCE(SUM(amount), 0) as total_amount
+                 FROM trips 
+                 WHERE trip_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)
+                 GROUP BY DATE_FORMAT(trip_date, '%Y-%m')
+                 ORDER BY month ASC"
+            );
+            
+            $stats['monthlyTrends'] = $monthlyTrends;
+            
+            // Calcular cambios porcentuales vs mes anterior
+            $lastMonthData = $this->db->fetch(
+                "SELECT 
+                    COALESCE(SUM(amount), 0) as lastMonthAmount,
+                    COUNT(*) as lastMonthTrips
+                 FROM trips 
+                 WHERE MONTH(trip_date) = MONTH(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH)) 
+                   AND YEAR(trip_date) = YEAR(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))"
+            );
+            
+            $lastMonthAmount = $lastMonthData['lastMonthAmount'] ?? 0;
+            $currentMonthAmount = $stats['monthlyAmount'];
+            
+            if ($lastMonthAmount > 0) {
+                $stats['monthlyAmountChange'] = round((($currentMonthAmount - $lastMonthAmount) / $lastMonthAmount) * 100, 1);
+            } else {
+                $stats['monthlyAmountChange'] = $currentMonthAmount > 0 ? 100 : 0;
+            }
             
             // Formatear montos para display
             $stats['totalAmountFormatted'] = $this->formatCurrency($stats['totalAmount']);
@@ -200,121 +243,106 @@ class DashboardController extends BaseController
     }
     
     /**
-     * Obtener actividad reciente
+     * Obtener actividad reciente del sistema
      */
-    private function getRecentActivity()
+    private function getRecentActivity($limit = 10)
     {
         try {
-            // Actividad de usuarios
-            $userActivity = $this->db->fetchAll(
+            $activities = $this->db->fetchAll(
                 "SELECT 
-                    al.action, 
-                    al.description, 
-                    al.created_at,
-                    u.full_name as user_name,
-                    u.username
-                 FROM activity_logs al
-                 LEFT JOIN users u ON al.user_id = u.id
-                 ORDER BY al.created_at DESC
-                 LIMIT 10"
+                    action,
+                    details,
+                    level,
+                    created_at,
+                    CASE 
+                        WHEN action = 'LOGIN' THEN '🔐 Inicio de sesión'
+                        WHEN action = 'VOUCHER_UPLOAD' THEN '📄 Voucher cargado'
+                        WHEN action = 'VOUCHER_PROCESS' THEN '⚙️ Voucher procesado'
+                        WHEN action = 'REPORT_GENERATE' THEN '📊 Reporte generado'
+                        WHEN action = 'COMPANY_CREATE' THEN '🏢 Empresa creada'
+                        WHEN action = 'COMPANY_UPDATE' THEN '✏️ Empresa actualizada'
+                        WHEN action = 'ERROR' THEN '❌ Error del sistema'
+                        ELSE CONCAT('📝 ', action)
+                    END as description
+                 FROM activity_logs 
+                 WHERE level != 'DEBUG'
+                 ORDER BY created_at DESC 
+                 LIMIT ?",
+                [$limit]
             );
             
-            // Vouchers recientes
-            $recentVouchers = $this->db->fetchAll(
-                "SELECT 
-                    v.id,
-                    v.original_filename,
-                    v.status,
-                    v.upload_date,
-                    u.full_name as uploaded_by_name
-                 FROM vouchers v
-                 LEFT JOIN users u ON v.uploaded_by = u.id
-                 ORDER BY v.upload_date DESC
-                 LIMIT 5"
-            );
-            
-            // Reportes generados recientemente
-            $recentReports = $this->db->fetchAll(
-                "SELECT 
-                    r.id,
-                    r.report_type,
-                    r.status,
-                    r.generated_at,
-                    c.name as company_name,
-                    u.full_name as generated_by_name
-                 FROM reports r
-                 LEFT JOIN companies c ON r.company_id = c.id
-                 LEFT JOIN users u ON r.generated_by = u.id
-                 ORDER BY r.generated_at DESC
-                 LIMIT 5"
-            );
-            
-            return [
-                'userActivity' => $userActivity,
-                'recentVouchers' => $recentVouchers,
-                'recentReports' => $recentReports
-            ];
+            return $activities;
             
         } catch (Exception $e) {
             $this->logActivity('ERROR', 'Error obteniendo actividad reciente: ' . $e->getMessage(), 'ERROR');
-            throw $e;
+            return [];
         }
     }
     
     /**
-     * Obtener vouchers pendientes
+     * Obtener vouchers pendientes de procesar
      */
-    private function getPendingVouchers()
+    private function getPendingVouchers($limit = 10)
     {
         try {
-            return $this->db->fetchAll(
+            $pendingVouchers = $this->db->fetchAll(
                 "SELECT 
-                    v.id,
-                    v.original_filename,
-                    v.file_format,
-                    v.file_size,
-                    v.upload_date,
-                    u.full_name as uploaded_by_name
-                 FROM vouchers v
-                 LEFT JOIN users u ON v.uploaded_by = u.id
-                 WHERE v.status = 'uploaded'
-                 ORDER BY v.upload_date ASC
-                 LIMIT 10"
+                    id,
+                    filename,
+                    file_path,
+                    status,
+                    file_size,
+                    created_at,
+                    CASE 
+                        WHEN status = 'uploaded' THEN 'Cargado'
+                        WHEN status = 'processing' THEN 'Procesando'
+                        WHEN status = 'processed' THEN 'Procesado'
+                        WHEN status = 'error' THEN 'Error'
+                        ELSE 'Desconocido'
+                    END as status_text
+                 FROM vouchers 
+                 WHERE status IN ('uploaded', 'processing', 'error')
+                 ORDER BY created_at DESC 
+                 LIMIT ?",
+                [$limit]
             );
+            
+            return $pendingVouchers;
             
         } catch (Exception $e) {
             $this->logActivity('ERROR', 'Error obteniendo vouchers pendientes: ' . $e->getMessage(), 'ERROR');
-            throw $e;
+            return [];
         }
     }
     
     /**
      * Obtener reportes recientes
      */
-    private function getRecentReports()
+    private function getRecentReports($limit = 5)
     {
         try {
-            return $this->db->fetchAll(
+            $recentReports = $this->db->fetchAll(
                 "SELECT 
                     r.id,
-                    r.report_type,
+                    r.report_name,
                     r.file_path,
-                    r.file_size,
-                    r.generated_at,
+                    r.status,
+                    r.created_at,
                     c.name as company_name,
-                    c.identifier as company_identifier,
-                    u.full_name as generated_by_name
+                    c.identifier as company_identifier
                  FROM reports r
                  LEFT JOIN companies c ON r.company_id = c.id
-                 LEFT JOIN users u ON r.generated_by = u.id
                  WHERE r.status = 'completed'
-                 ORDER BY r.generated_at DESC
-                 LIMIT 5"
+                 ORDER BY r.created_at DESC 
+                 LIMIT ?",
+                [$limit]
             );
+            
+            return $recentReports;
             
         } catch (Exception $e) {
             $this->logActivity('ERROR', 'Error obteniendo reportes recientes: ' . $e->getMessage(), 'ERROR');
-            throw $e;
+            return [];
         }
     }
     
@@ -323,80 +351,98 @@ class DashboardController extends BaseController
      */
     private function checkSystemHealth()
     {
-        $health = [
-            'overall' => 'healthy',
-            'checks' => []
-        ];
-        
         try {
-            // Verificar conexión a BD
-            $health['checks']['database'] = [
+            $health = [
                 'status' => 'healthy',
-                'message' => 'Base de datos conectada',
-                'details' => $this->db->fetch("SELECT VERSION() as version")['version'] ?? 'Unknown'
+                'checks' => [],
+                'warnings' => [],
+                'errors' => []
             ];
             
-            // Verificar directorios escribibles
-            $writableDirs = [
-                'uploads' => defined('UPLOAD_PATH') ? UPLOAD_PATH : 'public/uploads',
-                'logs' => defined('LOG_PATH') ? LOG_PATH : 'storage/logs',
-                'cache' => defined('CACHE_PATH') ? CACHE_PATH : 'storage/cache'
-            ];
+            // Check 1: Conexión a base de datos
+            try {
+                $this->db->fetch("SELECT 1");
+                $health['checks'][] = '✅ Conexión a base de datos: OK';
+            } catch (Exception $e) {
+                $health['errors'][] = '❌ Conexión a base de datos: ERROR - ' . $e->getMessage();
+                $health['status'] = 'error';
+            }
             
-            foreach ($writableDirs as $name => $path) {
-                $fullPath = defined('ROOT_PATH') ? ROOT_PATH . '/' . $path : $path;
-                $health['checks'][$name . '_directory'] = [
-                    'status' => is_writable($fullPath) ? 'healthy' : 'warning',
-                    'message' => is_writable($fullPath) ? 'Directorio escribible' : 'Directorio no escribible',
-                    'path' => $fullPath
-                ];
+            // Check 2: Directorio de uploads
+            $uploadPath = defined('UPLOAD_PATH') ? UPLOAD_PATH : ROOT_PATH . '/uploads';
+            if (is_dir($uploadPath) && is_writable($uploadPath)) {
+                $health['checks'][] = '✅ Directorio de uploads: OK';
+            } else {
+                $health['warnings'][] = '⚠️ Directorio de uploads: No escribible o no existe';
+                $health['status'] = $health['status'] === 'error' ? 'error' : 'warning';
+            }
+            
+            // Check 3: Directorio de reportes
+            $reportsPath = defined('REPORTS_PATH') ? REPORTS_PATH : ROOT_PATH . '/reports';
+            if (is_dir($reportsPath) && is_writable($reportsPath)) {
+                $health['checks'][] = '✅ Directorio de reportes: OK';
+            } else {
+                $health['warnings'][] = '⚠️ Directorio de reportes: No escribible o no existe';
+                $health['status'] = $health['status'] === 'error' ? 'error' : 'warning';
+            }
+            
+            // Check 4: Espacio en disco
+            $freeSpace = disk_free_space(ROOT_PATH);
+            $totalSpace = disk_total_space(ROOT_PATH);
+            
+            if ($freeSpace && $totalSpace) {
+                $usedPercentage = (($totalSpace - $freeSpace) / $totalSpace) * 100;
                 
-                if (!is_writable($fullPath)) {
-                    $health['overall'] = 'warning';
+                if ($usedPercentage < 80) {
+                    $health['checks'][] = '✅ Espacio en disco: ' . round(100 - $usedPercentage, 1) . '% disponible';
+                } elseif ($usedPercentage < 90) {
+                    $health['warnings'][] = '⚠️ Espacio en disco: Solo ' . round(100 - $usedPercentage, 1) . '% disponible';
+                    $health['status'] = $health['status'] === 'error' ? 'error' : 'warning';
+                } else {
+                    $health['errors'][] = '❌ Espacio en disco: Crítico - Solo ' . round(100 - $usedPercentage, 1) . '% disponible';
+                    $health['status'] = 'error';
                 }
             }
             
-            // Verificar espacio en disco
-            $freeSpace = disk_free_space('.');
-            $totalSpace = disk_total_space('.');
-            $usedPercentage = round((($totalSpace - $freeSpace) / $totalSpace) * 100, 2);
+            // Check 5: Memoria PHP
+            $memoryLimit = ini_get('memory_limit');
+            $memoryUsage = memory_get_usage(true);
             
-            $health['checks']['disk_space'] = [
-                'status' => $usedPercentage > 90 ? 'critical' : ($usedPercentage > 80 ? 'warning' : 'healthy'),
-                'message' => "Uso de disco: {$usedPercentage}%",
-                'free_space' => $this->formatBytes($freeSpace),
-                'total_space' => $this->formatBytes($totalSpace)
-            ];
+            $health['checks'][] = '✅ Memoria PHP: ' . $this->formatBytes($memoryUsage) . ' / ' . $memoryLimit;
             
-            if ($usedPercentage > 90) {
-                $health['overall'] = 'critical';
-            } elseif ($usedPercentage > 80 && $health['overall'] === 'healthy') {
-                $health['overall'] = 'warning';
+            // Check 6: Errores recientes
+            $recentErrors = $this->db->fetch(
+                "SELECT COUNT(*) as error_count 
+                 FROM activity_logs 
+                 WHERE level = 'ERROR' 
+                   AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)"
+            );
+            
+            $errorCount = $recentErrors['error_count'] ?? 0;
+            if ($errorCount == 0) {
+                $health['checks'][] = '✅ Sin errores en la última hora';
+            } elseif ($errorCount < 5) {
+                $health['warnings'][] = "⚠️ $errorCount errores en la última hora";
+                $health['status'] = $health['status'] === 'error' ? 'error' : 'warning';
+            } else {
+                $health['errors'][] = "❌ $errorCount errores en la última hora";
+                $health['status'] = 'error';
             }
-            
-            // Verificar versión PHP
-            $phpVersion = PHP_VERSION;
-            $health['checks']['php_version'] = [
-                'status' => version_compare($phpVersion, '7.4.0', '>=') ? 'healthy' : 'warning',
-                'message' => "PHP {$phpVersion}",
-                'recommended' => 'PHP 7.4+'
-            ];
             
             return $health;
             
         } catch (Exception $e) {
-            $health['overall'] = 'critical';
-            $health['checks']['system_error'] = [
-                'status' => 'critical',
-                'message' => 'Error verificando sistema: ' . $e->getMessage()
+            return [
+                'status' => 'error',
+                'checks' => [],
+                'warnings' => [],
+                'errors' => ['❌ Error verificando estado del sistema: ' . $e->getMessage()]
             ];
-            
-            return $health;
         }
     }
     
     // ========================================
-    // MÉTODOS DE UTILIDAD
+    // MÉTODOS AUXILIARES
     // ========================================
     
     /**
@@ -407,36 +453,6 @@ class DashboardController extends BaseController
         return '$' . number_format($amount, 2, '.', ',');
     }
     
-    /**
-     * Formatear fecha relativa
-     */
-    private function timeAgo($datetime)
-    {
-        $time = time() - strtotime($datetime);
-        
-        if ($time < 60) return 'hace ' . $time . ' segundos';
-        if ($time < 3600) return 'hace ' . round($time/60) . ' minutos';
-        if ($time < 86400) return 'hace ' . round($time/3600) . ' horas';
-        if ($time < 2592000) return 'hace ' . round($time/86400) . ' días';
-        
-        return date('d/m/Y', strtotime($datetime));
-    }
-    
-    /**
-     * Obtener color de estado
-     */
-    private function getStatusColor($status)
-    {
-        $colors = [
-            'uploaded' => 'warning',
-            'processing' => 'info', 
-            'processed' => 'success',
-            'error' => 'danger',
-            'completed' => 'success',
-            'failed' => 'danger'
-        ];
-        
-        return $colors[$status] ?? 'secondary';
-    }
+    // Método formatBytes() heredado del BaseController - no necesita redefinirse
 }
 ?>

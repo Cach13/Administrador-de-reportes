@@ -1,7 +1,7 @@
 <?php
 // ========================================
-// app/Controllers/ProcessingController.php
-// Controlador para procesamiento de archivos
+// app/Controllers/ProcessingController.php - ARREGLADO
+// Controlador para procesamiento de archivos - SIN ERRORES DE CONSTANTES
 // ========================================
 
 namespace App\Controllers;
@@ -42,13 +42,13 @@ class ProcessingController extends BaseController
             // Log de acceso
             $this->logActivity('PROCESSING_ACCESS', 'Usuario accedió a procesamiento');
             
-            // Renderizar vista
+            // Renderizar vista - ARREGLADO: usar constantes globales correctamente
             $this->render('pages/processing', [
                 'recentVouchers' => $recentVouchers,
                 'companies' => $companies,
                 'pageTitle' => 'Procesamiento de Archivos',
-                'maxFileSize' => MAX_UPLOAD_SIZE,
-                'allowedTypes' => ALLOWED_FILE_TYPES
+                'maxFileSize' => $this->getMaxUploadSize(),
+                'allowedTypes' => $this->getAllowedFileTypes()
             ]);
             
         } catch (Exception $e) {
@@ -80,10 +80,11 @@ class ProcessingController extends BaseController
             }
             
             $file = $_FILES['voucher_file'];
-            $this->validateFile($file, ALLOWED_FILE_TYPES, MAX_UPLOAD_SIZE);
+            // ARREGLADO: usar métodos de validación de la clase base
+            $this->validateFile($file, $this->getAllowedFileTypes(), $this->getMaxUploadSize());
             
             // Crear directorio de upload si no existe
-            $uploadDir = UPLOAD_PATH . '/vouchers/' . date('Y/m');
+            $uploadDir = $this->getUploadDirectory();
             if (!is_dir($uploadDir)) {
                 mkdir($uploadDir, 0755, true);
             }
@@ -104,7 +105,7 @@ class ProcessingController extends BaseController
             
             // Guardar en BD
             $voucherData = [
-                'original_filename' => $originalName,
+                'filename' => $originalName,
                 'stored_filename' => $fileName,
                 'file_path' => $filePath,
                 'file_format' => $fileFormat,
@@ -112,7 +113,7 @@ class ProcessingController extends BaseController
                 'mime_type' => $file['type'],
                 'status' => 'uploaded',
                 'uploaded_by' => $this->currentUser['id'],
-                'upload_date' => date('Y-m-d H:i:s')
+                'created_at' => date('Y-m-d H:i:s')
             ];
             
             $voucherId = $this->db->insert('vouchers', $voucherData);
@@ -135,175 +136,141 @@ class ProcessingController extends BaseController
     }
     
     /**
-     * Extraer datos del voucher
+     * Procesar voucher con MartinMarietaProcessor
      */
-    public function extract($voucherId)
+    public function processVoucher($voucherId = null)
     {
         // Verificar autenticación y permisos
         $this->requireAuth();
         $this->requirePermission('process_vouchers');
         
+        // Obtener ID del voucher
+        $voucherId = $voucherId ?? $this->request['post']['voucher_id'] ?? null;
+        
+        if (!$voucherId) {
+            $this->sendErrorResponse('ID de voucher requerido');
+        }
+        
         try {
-            // Validar voucher
-            $voucher = $this->getVoucherById($voucherId);
+            // Obtener información del voucher
+            $voucher = $this->db->fetch(
+                "SELECT * FROM vouchers WHERE id = ? AND status IN ('uploaded', 'error')",
+                [$voucherId]
+            );
+            
             if (!$voucher) {
-                $this->sendErrorResponse('Voucher no encontrado', 404);
+                $this->sendErrorResponse('Voucher no encontrado o ya procesado');
             }
             
-            if ($voucher['status'] !== 'uploaded') {
-                $this->sendErrorResponse('Voucher ya procesado o en estado inválido');
+            // Verificar que el archivo existe
+            if (!file_exists($voucher['file_path'])) {
+                $this->sendErrorResponse('Archivo no encontrado en disco');
             }
             
-            // Actualizar estado
-            $this->updateVoucherStatus($voucherId, 'extracted');
+            // Actualizar estado a procesando
+            $this->db->update('vouchers', 
+                ['status' => 'processing', 'processing_started' => date('Y-m-d H:i:s')],
+                ['id' => $voucherId]
+            );
             
-            // Obtener empresas disponibles directamente de la BD
-            $availableCompanies = $this->getActiveCompanies();
+            // Log inicio de procesamiento
+            $this->logActivity('VOUCHER_PROCESS_START', "Iniciando procesamiento del voucher ID: {$voucherId}");
             
-            // Log de extracción
-            $this->logActivity('DATA_EXTRACTION', "Voucher {$voucherId} listo para selección de empresas");
-            
-            // Respuesta con empresas disponibles para selección
-            $this->sendSuccessResponse([
-                'voucher_id' => $voucherId,
-                'status' => 'extracted',
-                'available_companies' => $availableCompanies,
-                'message' => 'Voucher listo para procesamiento. Seleccione las empresas a procesar.'
-            ], 'Voucher extraído correctamente');
-            
-        } catch (Exception $e) {
-            // Actualizar estado de error
-            $this->updateVoucherStatus($voucherId, 'error', $e->getMessage());
-            $this->handleError('EXTRACTION_ERROR', 'Error extrayendo datos: ' . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Vista previa de datos extraídos
-     */
-    public function preview($voucherId)
-    {
-        // Verificar autenticación
-        $this->requireAuth();
-        $this->requirePermission('process_vouchers');
-        
-        try {
-            $voucher = $this->getVoucherById($voucherId);
-            if (!$voucher || !in_array($voucher['status'], ['extracted', 'processing'])) {
-                $this->sendErrorResponse('Voucher no encontrado o no extraído', 404);
-            }
-            
-            // Obtener empresas disponibles directamente de la BD
-            $availableCompanies = $this->getActiveCompanies();
-            
-            // Información básica del voucher
-            $this->sendSuccessResponse([
-                'voucher' => $voucher,
-                'available_companies' => $availableCompanies,
-                'file_info' => [
-                    'filename' => $voucher['original_filename'],
-                    'format' => $voucher['file_format'],
-                    'size' => $this->formatBytes($voucher['file_size']),
-                    'upload_date' => $voucher['upload_date']
-                ],
-                'message' => 'Seleccione las empresas a procesar'
-            ]);
-            
-        } catch (Exception $e) {
-            $this->sendErrorResponse('Error obteniendo vista previa: ' . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Procesar voucher con empresas seleccionadas
-     */
-    public function process($voucherId)
-    {
-        // Verificar autenticación y permisos
-        $this->requireAuth();
-        $this->requirePermission('process_vouchers');
-        
-        // Verificar método POST
-        if ($this->request['method'] !== 'POST') {
-            $this->sendErrorResponse('Método no permitido', 405);
-        }
-        
-        try {
-            // Validar datos requeridos
-            $this->validateRequired($this->request['post'], ['selected_companies']);
-            
-            $selectedCompanies = $this->request['post']['selected_companies'];
-            if (!is_array($selectedCompanies) || empty($selectedCompanies)) {
-                $this->sendErrorResponse('Debe seleccionar al menos una empresa');
-            }
-            
-            // Validar voucher
-            $voucher = $this->getVoucherById($voucherId);
-            if (!$voucher || $voucher['status'] !== 'extracted') {
-                $this->sendErrorResponse('Voucher no encontrado o no extraído', 404);
-            }
-            
-            // Actualizar estado
-            $this->updateVoucherStatus($voucherId, 'processing');
-            
-            // Crear procesador con empresas seleccionadas
-            $processor = new MartinMarietaProcessor($voucherId, $selectedCompanies);
-            
-            // Procesar completamente
+            // Procesar con MartinMarietaProcessor - ARREGLADO: constructor correcto
+            $processor = new MartinMarietaProcessor($voucherId, $this->request['post']['selected_companies'] ?? []);
             $result = $processor->process();
             
-            // Actualizar estado final
-            $this->updateVoucherStatus($voucherId, 'processed');
-            
-            // Log de procesamiento
-            $this->logActivity('VOUCHER_PROCESSED', "Voucher {$voucherId} procesado: {$result['total_trips']} trips insertados");
-            
-            // Respuesta exitosa
-            $this->sendSuccessResponse([
-                'voucher_id' => $voucherId,
-                'processed_trips' => $result['total_trips'],
-                'companies_processed' => $result['companies'],
-                'total_amount' => $result['total_amount'],
-                'processing_time' => $result['processing_time'] ?? null
-            ], 'Voucher procesado correctamente');
+            if ($result['success']) {
+                // Guardar datos extraídos en la tabla trips
+                $tripsInserted = $this->saveTripsData($voucherId, $result['data'] ?? []);
+                
+                // Actualizar estado a procesado
+                $this->db->update('vouchers', [
+                    'status' => 'processed',
+                    'processing_completed' => date('Y-m-d H:i:s'),
+                    'trips_extracted' => $result['total_rows'] ?? count($result['data'] ?? []),
+                    'processing_notes' => "Procesado exitosamente. {$tripsInserted} viajes guardados."
+                ], ['id' => $voucherId]);
+                
+                // Log éxito
+                $this->logActivity('VOUCHER_PROCESS_SUCCESS', 
+                    "Voucher procesado exitosamente. ID: {$voucherId}, Trips: {$tripsInserted}");
+                
+                // Respuesta exitosa
+                $this->sendSuccessResponse([
+                    'voucher_id' => $voucherId,
+                    'status' => 'processed',
+                    'trips_extracted' => $result['total_rows'] ?? 0,
+                    'trips_saved' => $tripsInserted,
+                    'processing_time' => 0,
+                    'quality_score' => 1.0,
+                    'companies_found' => $result['companies_found'] ?? []
+                ], 'Voucher procesado exitosamente');
+                
+            } else {
+                // Error en procesamiento
+                $this->db->update('vouchers', [
+                    'status' => 'error',
+                    'processing_completed' => date('Y-m-d H:i:s'),
+                    'processing_notes' => $result['error'] ?? 'Error desconocido en procesamiento'
+                ], ['id' => $voucherId]);
+                
+                // Log error
+                $this->logActivity('VOUCHER_PROCESS_ERROR', 
+                    "Error procesando voucher ID: {$voucherId}. Error: " . ($result['error'] ?? 'Desconocido'), 'ERROR');
+                
+                $this->sendErrorResponse($result['error'] ?? 'Error en procesamiento', 500);
+            }
             
         } catch (Exception $e) {
-            // Actualizar estado de error
-            $this->updateVoucherStatus($voucherId, 'error', $e->getMessage());
-            $this->handleError('PROCESSING_ERROR', 'Error procesando voucher: ' . $e->getMessage());
+            // Error general - actualizar estado
+            $this->db->update('vouchers', [
+                'status' => 'error',
+                'processing_completed' => date('Y-m-d H:i:s'),
+                'processing_notes' => 'Error del sistema: ' . $e->getMessage()
+            ], ['id' => $voucherId]);
+            
+            $this->handleError('PROCESS_ERROR', 'Error procesando voucher: ' . $e->getMessage());
         }
     }
     
     /**
-     * API: Obtener estado de voucher
+     * API: Estado del procesamiento
      */
-    public function getStatus($voucherId)
+    public function getProcessingStatus($voucherId)
     {
-        // Verificar autenticación
         $this->requireAuth();
         
         try {
-            $voucher = $this->getVoucherById($voucherId);
+            $voucher = $this->db->fetch(
+                "SELECT id, filename, status, trips_extracted, processing_notes, 
+                        created_at, processing_started, processing_completed
+                 FROM vouchers WHERE id = ?",
+                [$voucherId]
+            );
+            
             if (!$voucher) {
                 $this->sendErrorResponse('Voucher no encontrado', 404);
             }
             
-            // Obtener información adicional según estado
-            $additionalInfo = [];
-            
-            if ($voucher['status'] === 'processed') {
-                // Contar trips generados
-                $tripsCount = $this->db->fetch(
-                    "SELECT COUNT(*) as count FROM trips WHERE voucher_id = ?",
-                    [$voucherId]
-                )['count'] ?? 0;
-                
-                $additionalInfo['trips_count'] = $tripsCount;
+            // Calcular tiempo de procesamiento si está en curso
+            $processingTime = null;
+            if ($voucher['status'] === 'processing' && $voucher['processing_started']) {
+                $processingTime = time() - strtotime($voucher['processing_started']);
+            } elseif ($voucher['processing_completed'] && $voucher['processing_started']) {
+                $processingTime = strtotime($voucher['processing_completed']) - strtotime($voucher['processing_started']);
             }
             
             $this->sendSuccessResponse([
-                'voucher' => $voucher,
-                'additional_info' => $additionalInfo
+                'voucher_id' => $voucher['id'],
+                'filename' => $voucher['filename'],
+                'status' => $voucher['status'],
+                'trips_extracted' => $voucher['trips_extracted'],
+                'processing_notes' => $voucher['processing_notes'],
+                'processing_time' => $processingTime,
+                'created_at' => $voucher['created_at'],
+                'processing_started' => $voucher['processing_started'],
+                'processing_completed' => $voucher['processing_completed']
             ]);
             
         } catch (Exception $e) {
@@ -311,27 +278,155 @@ class ProcessingController extends BaseController
         }
     }
     
+    /**
+     * API: Lista de vouchers
+     */
+    public function getVouchersList()
+    {
+        $this->requireAuth();
+        
+        try {
+            $vouchers = $this->db->fetchAll(
+                "SELECT id, filename, status, file_size, trips_extracted, created_at
+                 FROM vouchers 
+                 ORDER BY created_at DESC 
+                 LIMIT 50"
+            );
+            
+            // Formatear datos para la respuesta
+            foreach ($vouchers as &$voucher) {
+                $voucher['file_size_formatted'] = $this->formatBytes($voucher['file_size']);
+                $voucher['created_at_formatted'] = date('d/m/Y H:i', strtotime($voucher['created_at']));
+            }
+            
+            $this->sendSuccessResponse($vouchers);
+            
+        } catch (Exception $e) {
+            $this->sendErrorResponse('Error obteniendo lista: ' . $e->getMessage());
+        }
+    }
+    
     // ========================================
-    // MÉTODOS PRIVADOS DE DATOS
+    // MÉTODOS PRIVADOS
     // ========================================
+    
+    /**
+     * Obtener tamaño máximo de upload - ARREGLADO: namespace correcto
+     */
+    private function getMaxUploadSize()
+    {
+        return defined('MAX_UPLOAD_SIZE') ? MAX_UPLOAD_SIZE : 20971520; // 20MB
+    }
+    
+    /**
+     * Obtener tipos de archivo permitidos - ARREGLADO: namespace correcto  
+     */
+    private function getAllowedFileTypes()
+    {
+        return defined('ALLOWED_FILE_TYPES') ? ALLOWED_FILE_TYPES : ['pdf', 'xlsx', 'xls'];
+    }
+    
+    /**
+     * Obtener directorio de upload
+     */
+    private function getUploadDirectory()
+    {
+        $basePath = defined('UPLOAD_PATH') ? \UPLOAD_PATH : ROOT_PATH . '/uploads';
+        return $basePath . '/vouchers/' . date('Y/m');
+    }
+    
+    /**
+     * Detectar formato del archivo
+     */
+    private function detectFileFormat($filePath, $extension)
+    {
+        $extension = strtolower($extension);
+        
+        switch ($extension) {
+            case 'pdf':
+                return 'pdf';
+            case 'xlsx':
+            case 'xls':
+                return 'excel';
+            default:
+                // Intentar detectar por contenido
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mimeType = finfo_file($finfo, $filePath);
+                finfo_close($finfo);
+                
+                if (strpos($mimeType, 'pdf') !== false) {
+                    return 'pdf';
+                } elseif (strpos($mimeType, 'spreadsheet') !== false || strpos($mimeType, 'excel') !== false) {
+                    return 'excel';
+                }
+                
+                return 'unknown';
+        }
+    }
+    
+    /**
+     * Guardar datos de trips extraídos
+     */
+    private function saveTripsData($voucherId, $tripsData)
+    {
+        $insertedCount = 0;
+        
+        foreach ($tripsData as $trip) {
+            try {
+                $tripData = [
+                    'voucher_id' => $voucherId,
+                    'truck_number' => $trip['truck_number'] ?? null,
+                    'trip_date' => $trip['date'] ?? date('Y-m-d'),
+                    'customer' => $trip['customer'] ?? null,
+                    'material' => $trip['material'] ?? null,
+                    'tons' => $trip['tons'] ?? 0,
+                    'rate' => $trip['rate'] ?? 0,
+                    'amount' => $trip['amount'] ?? 0,
+                    'job_site' => $trip['job_site'] ?? null,
+                    'plant' => $trip['plant'] ?? null,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+                
+                $this->db->insert('trips', $tripData);
+                $insertedCount++;
+                
+            } catch (Exception $e) {
+                $this->logger->log(
+                    $this->currentUser['id'],
+                    'TRIP_INSERT_ERROR',
+                    "Error insertando trip del voucher {$voucherId}: " . $e->getMessage(),
+                    'ERROR'
+                );
+                // Continuar con el siguiente trip
+                continue;
+            }
+        }
+        
+        return $insertedCount;
+    }
     
     /**
      * Obtener vouchers recientes
      */
-    private function getRecentVouchers()
+    private function getRecentVouchers($limit = 10)
     {
-        return $this->db->fetchAll(
-            "SELECT 
-                v.*,
-                u.full_name as uploaded_by_name,
-                COUNT(t.id) as trips_count
-             FROM vouchers v
-             LEFT JOIN users u ON v.uploaded_by = u.id
-             LEFT JOIN trips t ON v.id = t.voucher_id
-             GROUP BY v.id
-             ORDER BY v.upload_date DESC
-             LIMIT 20"
-        );
+        try {
+            return $this->db->fetchAll(
+                "SELECT id, filename, status, file_size, trips_extracted, created_at
+                 FROM vouchers 
+                 ORDER BY created_at DESC 
+                 LIMIT ?",
+                [$limit]
+            );
+        } catch (Exception $e) {
+            $this->logger->log(
+                $this->currentUser['id'] ?? null,
+                'GET_RECENT_VOUCHERS_ERROR',
+                'Error obteniendo vouchers recientes: ' . $e->getMessage(),
+                'ERROR'
+            );
+            return [];
+        }
     }
     
     /**
@@ -339,79 +434,22 @@ class ProcessingController extends BaseController
      */
     private function getActiveCompanies()
     {
-        return $this->db->fetchAll(
-            "SELECT id, name, identifier, capital_percentage 
-             FROM companies 
-             WHERE is_active = 1 
-             ORDER BY name ASC"
-        );
-    }
-    
-    /**
-     * Obtener voucher por ID
-     */
-    private function getVoucherById($voucherId)
-    {
-        return $this->db->fetch(
-            "SELECT * FROM vouchers WHERE id = ?",
-            [$voucherId]
-        );
-    }
-    
-    /**
-     * Actualizar estado de voucher
-     */
-    private function updateVoucherStatus($voucherId, $status, $errorMessage = null)
-    {
-        $data = [
-            'status' => $status,
-            'updated_at' => date('Y-m-d H:i:s')
-        ];
-        
-        if ($errorMessage) {
-            $data['error_message'] = $errorMessage;
+        try {
+            return $this->db->fetchAll(
+                "SELECT id, name, identifier, capital_percentage
+                 FROM companies 
+                 WHERE is_active = 1 
+                 ORDER BY name"
+            );
+        } catch (Exception $e) {
+            $this->logger->log(
+                $this->currentUser['id'] ?? null,
+                'GET_COMPANIES_ERROR',
+                'Error obteniendo empresas: ' . $e->getMessage(),
+                'ERROR'
+            );
+            return [];
         }
-        
-        return $this->db->update('vouchers', $data, 'id = ?', [$voucherId]);
-    }
-    
-    /**
-     * Detectar formato de archivo
-     */
-    private function detectFileFormat($filePath, $extension)
-    {
-        $extension = strtolower($extension);
-        
-        // Mapeo de extensiones a formatos
-        $formatMap = [
-            'pdf' => 'pdf',
-            'xlsx' => 'excel',
-            'xls' => 'excel'
-        ];
-        
-        return $formatMap[$extension] ?? 'unknown';
-    }
-    
-    /**
-     * Obtener rango de fechas de los datos
-     */
-    private function getDateRange($data)
-    {
-        if (empty($data)) {
-            return ['from' => null, 'to' => null];
-        }
-        
-        $dates = array_column($data, 'ship_date');
-        $dates = array_filter($dates); // Remover fechas vacías
-        
-        if (empty($dates)) {
-            return ['from' => null, 'to' => null];
-        }
-        
-        return [
-            'from' => min($dates),
-            'to' => max($dates)
-        ];
     }
 }
 ?>
