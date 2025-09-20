@@ -16,8 +16,16 @@ $allowedTypes = $allowedTypes ?? ['pdf', 'xlsx', 'xls'];
 function getBaseUrl() {
     $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $script = dirname($_SERVER['SCRIPT_NAME'] ?? '');
-    return $protocol . '://' . $host . $script;
+    
+    // Obtener el directorio base del proyecto
+    $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+    
+    // Si estamos en /views/pages/, subir dos niveles para llegar a la raíz
+    if (strpos($scriptDir, '/views/pages') !== false) {
+        $scriptDir = dirname(dirname($scriptDir));
+    }
+    
+    return $protocol . '://' . $host . $scriptDir;
 }
 
 // Función helper para formatear bytes
