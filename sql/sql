@@ -1,5 +1,5 @@
 -- ========================================
--- TRANSPORT MANAGEMENT SYSTEM - NUEVA ESTRUCTURA BD
+-- TRANSPORT MANAGEMENT SYSTEM - COMPATIBLE CON MARIADB
 -- Flow: Voucher → Extract → Select Company → Generate Report
 -- ========================================
 
@@ -30,15 +30,15 @@ CREATE TABLE users (
     INDEX idx_email (email),
     INDEX idx_role (role),
     INDEX idx_active (is_active)
-);
+) ENGINE=InnoDB;
 
 -- ========================================
--- 2. TABLA DE EMPRESAS (CON IDENTIFICADOR 3 LETRAS)
+-- 2. TABLA DE EMPRESAS
 -- ========================================
 CREATE TABLE companies (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(150) NOT NULL,
-    identifier VARCHAR(3) UNIQUE NOT NULL,           -- 🆕 JAV, ABC, etc. (chars 4-6 del Vehicle ID)
+    identifier VARCHAR(3) UNIQUE NOT NULL,
     legal_name VARCHAR(200) NULL,
     tax_id VARCHAR(50) NULL,
     contact_person VARCHAR(100) NULL,
@@ -50,12 +50,10 @@ CREATE TABLE companies (
     postal_code VARCHAR(10) NULL,
     country VARCHAR(50) DEFAULT 'México',
     
-    -- 🆕 CONFIGURACIÓN CAPITAL TRANSPORT
-    capital_percentage DECIMAL(5,2) DEFAULT 5.00,   -- Variable por empresa (ej: 5%)
-    current_payment_no INT DEFAULT 1,               -- Auto-increment por empresa
-    last_payment_year YEAR DEFAULT NULL,            -- Para reset anual
+    capital_percentage DECIMAL(5,2) DEFAULT 5.00,
+    current_payment_no INT DEFAULT 1,
+    last_payment_year YEAR DEFAULT NULL,
     
-    -- Configuración bancaria
     bank_name VARCHAR(100) NULL,
     account_number VARCHAR(50) NULL,
     clabe VARCHAR(18) NULL,
@@ -65,15 +63,14 @@ CREATE TABLE companies (
     created_by INT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     
-    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_name (name),
-    INDEX idx_identifier (identifier),               -- 🆕 Para búsquedas rápidas
+    INDEX idx_identifier (identifier),
     INDEX idx_tax_id (tax_id),
     INDEX idx_active (is_active)
-);
+) ENGINE=InnoDB;
 
 -- ========================================
--- 3. TABLA DE VOUCHERS (INPUT - MARTIN MARIETA)
+-- 3. TABLA DE VOUCHERS
 -- ========================================
 CREATE TABLE vouchers (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -83,7 +80,7 @@ CREATE TABLE vouchers (
     file_size INT NOT NULL,
     file_hash VARCHAR(64) NULL,
     
-    file_type ENUM('martin_marieta') DEFAULT 'martin_marieta',  -- Solo Martin Marieta por ahora
+    file_type ENUM('martin_marieta') DEFAULT 'martin_marieta',
     file_format ENUM('pdf', 'xlsx', 'xls') NOT NULL,
     
     status ENUM('uploaded', 'processing', 'processed', 'error') DEFAULT 'uploaded',
@@ -91,7 +88,6 @@ CREATE TABLE vouchers (
     processing_completed_at TIMESTAMP NULL,
     processing_notes TEXT NULL,
     
-    -- Estadísticas del archivo
     total_rows_found INT DEFAULT 0,
     valid_rows_extracted INT DEFAULT 0,
     rows_with_errors INT DEFAULT 0,
@@ -100,31 +96,28 @@ CREATE TABLE vouchers (
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     uploaded_by INT NOT NULL,
     
-    FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE RESTRICT,
     INDEX idx_status (status),
     INDEX idx_upload_date (upload_date),
     INDEX idx_file_type (file_type),
     INDEX idx_uploaded_by (uploaded_by)
-);
+) ENGINE=InnoDB;
 
 -- ========================================
--- 4. TABLA DE TRIPS (DATOS EXTRAÍDOS DEL VOUCHER)
+-- 4. TABLA DE TRIPS
 -- ========================================
 CREATE TABLE trips (
     id INT PRIMARY KEY AUTO_INCREMENT,
     voucher_id INT NOT NULL,
     company_id INT NOT NULL,
     
-    -- Información del viaje (mapeada desde Martin Marieta)
-    trip_date DATE NOT NULL,                        -- Ship Date → trip_date
-    location VARCHAR(200) NOT NULL,                 -- Location → location
-    ticket_number VARCHAR(100) NULL,               -- Ticket Number → ticket_number
-    haul_rate DECIMAL(10,2) NOT NULL DEFAULT 0.00, -- Haul Rate → haul_rate
-    quantity DECIMAL(8,2) NOT NULL DEFAULT 0.00,   -- Quantity → quantity
-    amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,    -- Amount → amount
-    vehicle_number VARCHAR(20) NOT NULL,           -- Vehicle Number → vehicle_number (9 chars)
+    trip_date DATE NOT NULL,
+    location VARCHAR(200) NOT NULL,
+    ticket_number VARCHAR(100) NULL,
+    haul_rate DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    quantity DECIMAL(8,2) NOT NULL DEFAULT 0.00,
+    amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    vehicle_number VARCHAR(20) NOT NULL,
     
-    -- Metadatos de extracción
     source_row_number INT NULL,
     extraction_confidence DECIMAL(3,2) DEFAULT 1.00,
     manual_review_required BOOLEAN DEFAULT FALSE,
@@ -132,46 +125,40 @@ CREATE TABLE trips (
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
-    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT,
-    
     INDEX idx_voucher_company (voucher_id, company_id),
     INDEX idx_trip_date (trip_date),
     INDEX idx_vehicle_number (vehicle_number),
     INDEX idx_ticket_number (ticket_number),
     INDEX idx_company_date (company_id, trip_date)
-);
+) ENGINE=InnoDB;
 
 -- ========================================
--- 5. TABLA DE REPORTS (OUTPUT - CAPITAL TRANSPORT FORMAT)
+-- 5. TABLA DE REPORTS - ARREGLADA PARA MARIADB
 -- ========================================
 CREATE TABLE reports (
     id INT PRIMARY KEY AUTO_INCREMENT,
     company_id INT NOT NULL,
     voucher_id INT NOT NULL,
     
-    -- 🆕 CAMPOS ÚNICOS CAPITAL TRANSPORT PAYMENT INFORMATION
-    payment_no INT NOT NULL,                        -- Auto-increment por empresa/año
-    week_start DATE NOT NULL,                       -- Week Start
-    week_end DATE NOT NULL,                         -- Week End
-    payment_date DATE NOT NULL,                     -- Payment Date
-    payment_total DECIMAL(12,2) NOT NULL,          -- Payment Total
-    ytd_amount DECIMAL(12,2) NOT NULL,             -- YTD (Year To Date)
-    subtotal DECIMAL(12,2) NOT NULL,               -- SUBTOTAL
-    capital_percentage DECIMAL(5,2) NOT NULL,      -- Capital's %
-    capital_deduction DECIMAL(12,2) NOT NULL,      -- Capital's deduction amount
-    total_payment DECIMAL(12,2) NOT NULL,          -- TOTAL PAYMENT (subtotal - deduction)
+    payment_no INT NOT NULL,
+    payment_year YEAR NOT NULL,
+    week_start DATE NOT NULL,
+    week_end DATE NOT NULL,
+    payment_date DATE NOT NULL,
+    payment_total DECIMAL(12,2) NOT NULL,
+    ytd_amount DECIMAL(12,2) NOT NULL,
+    subtotal DECIMAL(12,2) NOT NULL,
+    capital_percentage DECIMAL(5,2) NOT NULL,
+    capital_deduction DECIMAL(12,2) NOT NULL,
+    total_payment DECIMAL(12,2) NOT NULL,
     
-    -- Metadatos del reporte
     report_title VARCHAR(200) NOT NULL DEFAULT 'CAPITAL TRANSPORT LLP PAYMENT INFORMATION',
     generation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     generated_by INT NOT NULL,
     
-    -- Estadísticas
     total_trips INT NOT NULL DEFAULT 0,
     total_vehicle_count INT NOT NULL DEFAULT 0,
     
-    -- Archivo generado
     file_path VARCHAR(500) NULL,
     file_format ENUM('pdf', 'excel', 'both') DEFAULT 'pdf',
     
@@ -181,21 +168,18 @@ CREATE TABLE reports (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
-    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT,
-    FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE RESTRICT,
-    FOREIGN KEY (generated_by) REFERENCES users(id) ON DELETE RESTRICT,
-    
     INDEX idx_company_payment (company_id, payment_no),
     INDEX idx_payment_date (payment_date),
     INDEX idx_week_period (week_start, week_end),
     INDEX idx_generation_date (generation_date),
     INDEX idx_status (status),
+    INDEX idx_payment_year (payment_year),
     
-    UNIQUE KEY unique_company_payment_year (company_id, payment_no, YEAR(payment_date))
-);
+    UNIQUE KEY unique_company_payment_year (company_id, payment_no, payment_year)
+) ENGINE=InnoDB;
 
 -- ========================================
--- 6. TABLA DE LOGS DE ACTIVIDAD
+-- 6. TABLA DE ACTIVITY LOGS
 -- ========================================
 CREATE TABLE activity_logs (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -203,40 +187,99 @@ CREATE TABLE activity_logs (
     action VARCHAR(100) NOT NULL,
     description TEXT NOT NULL,
     ip_address VARCHAR(45) NULL,
-    user_agent TEXT NULL,
+    user_agent VARCHAR(500) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_user_id (user_id),
     INDEX idx_action (action),
     INDEX idx_created_at (created_at)
-);
+) ENGINE=InnoDB;
 
 -- ========================================
--- 7. INSERTAR DATOS INICIALES
+-- 7. FOREIGN KEYS
+-- ========================================
+ALTER TABLE companies 
+ADD CONSTRAINT fk_companies_created_by 
+FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
+
+ALTER TABLE vouchers 
+ADD CONSTRAINT fk_vouchers_uploaded_by 
+FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE RESTRICT;
+
+ALTER TABLE trips 
+ADD CONSTRAINT fk_trips_voucher_id 
+FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE;
+
+ALTER TABLE trips 
+ADD CONSTRAINT fk_trips_company_id 
+FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT;
+
+ALTER TABLE reports 
+ADD CONSTRAINT fk_reports_company_id 
+FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT;
+
+ALTER TABLE reports 
+ADD CONSTRAINT fk_reports_voucher_id 
+FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE RESTRICT;
+
+ALTER TABLE reports 
+ADD CONSTRAINT fk_reports_generated_by 
+FOREIGN KEY (generated_by) REFERENCES users(id) ON DELETE RESTRICT;
+
+ALTER TABLE activity_logs 
+ADD CONSTRAINT fk_activity_logs_user_id 
+FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+-- ========================================
+-- 8. DATOS INICIALES
 -- ========================================
 
--- Usuario administrador por defecto
+-- Usuario admin (password: "password")
 INSERT INTO users (username, email, password_hash, full_name, role) VALUES 
-('admin', 'admin@transport.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrador', 'admin');
+('admin', 'admin@transport.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrador Sistema', 'admin');
 
--- Empresas de ejemplo con identificadores
+-- Empresas de ejemplo
 INSERT INTO companies (name, identifier, legal_name, capital_percentage, created_by) VALUES 
 ('Johnson & Associates', 'JAV', 'Johnson & Associates LLC', 5.00, 1),
 ('Martin Construction', 'MAR', 'Martin Construction Company', 4.50, 1),
 ('Brown Transport', 'BRN', 'Brown Transport Solutions Inc', 6.00, 1),
-('Wilson Logistics', 'WIL', 'Wilson Logistics Corp', 5.50, 1);
+('Wilson Logistics', 'WIL', 'Wilson Logistics Corp', 5.50, 1),
+('Capital Partners', 'CAP', 'Capital Partners Transportation', 5.25, 1);
 
--- Log de instalación
+-- Log inicial
 INSERT INTO activity_logs (user_id, action, description, ip_address) VALUES 
-(1, 'SYSTEM_INSTALL', 'Sistema instalado - Nueva estructura BD con flujo Voucher → Report', '127.0.0.1');
+(1, 'SYSTEM_INSTALL', 'Sistema instalado correctamente', '127.0.0.1');
 
 -- ========================================
--- 8. VISTAS ÚTILES
+-- 9. TRIGGER PARA AUTO-RELLENAR payment_year
+-- ========================================
+DELIMITER //
+
+CREATE TRIGGER tr_reports_payment_year 
+BEFORE INSERT ON reports
+FOR EACH ROW
+BEGIN
+    IF NEW.payment_year IS NULL OR NEW.payment_year = 0 THEN
+        SET NEW.payment_year = YEAR(NEW.payment_date);
+    END IF;
+END//
+
+CREATE TRIGGER tr_reports_payment_year_update
+BEFORE UPDATE ON reports
+FOR EACH ROW
+BEGIN
+    IF NEW.payment_year IS NULL OR NEW.payment_year = 0 THEN
+        SET NEW.payment_year = YEAR(NEW.payment_date);
+    END IF;
+END//
+
+DELIMITER ;
+
+-- ========================================
+-- 10. VISTAS ÚTILES
 -- ========================================
 
--- Vista de resumen por empresa
-CREATE VIEW company_summary AS
+CREATE VIEW v_company_summary AS
 SELECT 
     c.id,
     c.name,
@@ -248,32 +291,26 @@ SELECT
     COUNT(DISTINCT r.id) as total_reports_generated,
     COALESCE(SUM(r.total_payment), 0) as total_payments_made,
     COALESCE(SUM(r.capital_deduction), 0) as total_capital_deductions,
-    MAX(r.payment_date) as last_payment_date
+    MAX(r.payment_date) as last_payment_date,
+    c.is_active
 FROM companies c
 LEFT JOIN trips t ON c.id = t.company_id
 LEFT JOIN vouchers v ON t.voucher_id = v.id
 LEFT JOIN reports r ON c.id = r.company_id
-WHERE c.is_active = 1
-GROUP BY c.id, c.name, c.identifier, c.capital_percentage, c.current_payment_no;
+GROUP BY c.id, c.name, c.identifier, c.capital_percentage, c.current_payment_no, c.is_active;
 
--- Vista de estadísticas de vouchers
-CREATE VIEW voucher_stats AS
-SELECT 
-    v.id,
-    v.voucher_number,
-    v.original_filename,
-    v.status,
-    v.total_rows_found,
-    v.valid_rows_extracted,
-    v.extraction_confidence,
-    COUNT(DISTINCT t.company_id) as companies_found,
-    COUNT(t.id) as total_trips,
-    COALESCE(SUM(t.amount), 0) as total_amount,
-    u.full_name as uploaded_by_name
-FROM vouchers v
-LEFT JOIN trips t ON v.id = t.voucher_id
-LEFT JOIN users u ON v.uploaded_by = u.id
-GROUP BY v.id, v.voucher_number, v.original_filename, v.status, 
-         v.total_rows_found, v.valid_rows_extracted, v.extraction_confidence, u.full_name;
+-- ========================================
+-- 11. VERIFICACIÓN
+-- ========================================
+SHOW TABLES;
 
-COMMIT;
+SELECT 'DATABASE SETUP COMPLETED SUCCESSFULLY FOR MARIADB!' as status;
+SELECT COUNT(*) as total_users FROM users;
+SELECT COUNT(*) as total_companies FROM companies;
+
+-- Verificar que todo funciona
+SELECT u.username, u.role, c.name as company_name, c.identifier 
+FROM users u 
+CROSS JOIN companies c 
+WHERE u.username = 'admin' 
+LIMIT 3;
