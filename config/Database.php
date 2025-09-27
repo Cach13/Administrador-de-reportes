@@ -91,30 +91,90 @@ class Database {
     /**
      * Ejecutar query INSERT
      */
-    public function insert($query, $params = []) {
-        try {
-            $stmt = $this->connection->prepare($query);
-            $result = $stmt->execute($params);
+    public function insert($query_or_table, $params_or_data = []) {
+    try {
+        // Si el primer parámetro contiene "INSERT", es una query completa
+        if (stripos($query_or_table, 'INSERT') !== false) {
+            // Formato 1: Query SQL completa
+            $stmt = $this->connection->prepare($query_or_table);
+            $result = $stmt->execute($params_or_data);
             return $result ? $this->connection->lastInsertId() : false;
-        } catch (PDOException $e) {
-            error_log("Database INSERT Error: " . $e->getMessage());
-            return false;
+        } else {
+            // Formato 2: Tabla y array de datos
+            $table = $query_or_table;
+            $data = $params_or_data;
+            
+            if (empty($data) || !is_array($data)) {
+                throw new Exception("Datos de inserción inválidos");
+            }
+            
+            $columns = array_keys($data);
+            $placeholders = array_fill(0, count($columns), '?');
+            
+            $sql = "INSERT INTO {$table} (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
+            
+            $stmt = $this->connection->prepare($sql);
+            $result = $stmt->execute(array_values($data));
+            
+            return $result ? $this->connection->lastInsertId() : false;
         }
+        
+    } catch (PDOException $e) {
+        error_log("Database INSERT Error: " . $e->getMessage());
+        return false;
     }
+}
     
     /**
      * Ejecutar query UPDATE
      */
-    public function update($query, $params = []) {
-        try {
-            $stmt = $this->connection->prepare($query);
-            $stmt->execute($params);
+    public function update($query_or_table, $params_or_data = [], $where = []) {
+    try {
+        // Si el primer parámetro contiene "UPDATE", es una query completa
+        if (stripos($query_or_table, 'UPDATE') !== false) {
+            // Formato 1: Query SQL completa
+            $stmt = $this->connection->prepare($query_or_table);
+            $stmt->execute($params_or_data);
             return $stmt->rowCount();
-        } catch (PDOException $e) {
-            error_log("Database UPDATE Error: " . $e->getMessage());
-            return false;
+        } else {
+            // Formato 2: Tabla, datos y WHERE
+            $table = $query_or_table;
+            $data = $params_or_data;
+            
+            if (empty($data) || !is_array($data)) {
+                throw new Exception("Datos de actualización inválidos");
+            }
+            
+            if (empty($where) || !is_array($where)) {
+                throw new Exception("Condición WHERE requerida para UPDATE");
+            }
+            
+            $set_parts = [];
+            $values = [];
+            
+            foreach ($data as $column => $value) {
+                $set_parts[] = "{$column} = ?";
+                $values[] = $value;
+            }
+            
+            $where_parts = [];
+            foreach ($where as $column => $value) {
+                $where_parts[] = "{$column} = ?";
+                $values[] = $value;
+            }
+            
+            $sql = "UPDATE {$table} SET " . implode(', ', $set_parts) . " WHERE " . implode(' AND ', $where_parts);
+            
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($values);
+            return $stmt->rowCount();
         }
+        
+    } catch (PDOException $e) {
+        error_log("Database UPDATE Error: " . $e->getMessage());
+        return false;
     }
+}
     
     /**
      * Ejecutar query DELETE

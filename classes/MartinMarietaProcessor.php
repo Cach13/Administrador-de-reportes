@@ -28,8 +28,8 @@ class MartinMarietaProcessor {
     private $file_path;
     private $file_info;
     private $selected_companies = [];
-    private $extracted_data = [];  // AGREGADA: Propiedad faltante
-    private $stats = [];           // AGREGADA: Propiedad faltante
+    private $extracted_data = [];
+    private $stats = [];
     
     // Mapeo de campos Martin Marieta
     private $field_mapping = [
@@ -198,146 +198,201 @@ class MartinMarietaProcessor {
     /**
      * MÉTODO CORREGIDO: Extraer datos desde PDF Martin Marieta
      */
-  private function extractFromPDF() {
-    try {
-        logMessage('INFO', "=== INICIO extractFromPDF ===");
-        
-        $parser = new Parser();
-        $document = $parser->parseFile($this->file_path);
-        $text = $document->getText();
-        
-        logMessage('INFO', "PDF parseado correctamente");
-        logMessage('INFO', "Texto total length: " . strlen($text));
-        
-        $extracted_data = [];
-        $lines = explode("\n", $text);
-        
-        logMessage('INFO', "Total líneas en PDF: " . count($lines));
-        
-        // DEBUG: Mostrar las primeras 100 líneas para identificar el formato real
-        logMessage('INFO', "=== PRIMERAS 100 LÍNEAS DEL PDF ===");
-        for ($i = 0; $i < min(100, count($lines)); $i++) {
-            $line = trim($lines[$i]);
-            if (!empty($line)) {
-                logMessage('DEBUG', "Línea {$i}: [{$line}]");
-            }
-        }
-        logMessage('INFO', "=== FIN DEBUG LÍNEAS ===");
-        
-        // Buscar líneas que contengan vehículos (RMT...)
-        logMessage('INFO', "=== BUSCANDO LÍNEAS CON VEHÍCULOS ===");
-        foreach ($lines as $line_number => $line) {
-            $line = trim($line);
-            if (empty($line)) continue;
+    private function extractFromPDF() {
+        try {
+            logMessage('INFO', "=== INICIO extractFromPDF ===");
             
-            // Si la línea contiene RMT (vehículos), mostrarla
-            if (strpos($line, 'RMT') !== false) {
-                logMessage('DEBUG', "LÍNEA CON VEHÍCULO {$line_number}: [{$line}]");
-            }
-        }
-        logMessage('INFO', "=== FIN BÚSQUEDA VEHÍCULOS ===");
-        
-        foreach ($lines as $line_number => $line) {
-            $line = trim($line);
-            if (empty($line)) continue;
+            $parser = new Parser();
+            $document = $parser->parseFile($this->file_path);
+            $text = $document->getText();
             
-            // Múltiples patrones para probar diferentes formatos
-            $patterns = [
-                // Patrón original
-                'original' => '/^(\d{2})\s+(\d{4,6})\s+([A-Z]{2})\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+([A-Z0-9]{9})\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{2})\s+([\d.]+)$/',
-                
-                // Patrón alternativo sin oper code
-                'alt1' => '/(\d{4,6})\s+([A-Z]{2})\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+([A-Z0-9]{9})\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{2})\s+([\d.]+)/',
-                
-                // Patrón más flexible con tabs
-                'tabs' => '/(\d{4,6})\s+([A-Z]{2})\s*\t?\s*(\d{2}\/\d{2}\/\d{4})(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{2})\s+([\d.]+)\s+(\d+)\s*\t?\s*([A-Z0-9]{9})/',
-                
-                // Patrón muy flexible
-                'flexible' => '/(\d{4,6}).*?([A-Z]{2}).*?(\d{2}\/\d{2}\/\d{4}).*?(\d{8}).*?([A-Z0-9]{9}).*?([\d.]+).*?([\d.]+).*?([\d.]+)/'
-            ];
+            logMessage('INFO', "PDF parseado correctamente");
+            logMessage('INFO', "Texto total length: " . strlen($text));
             
-            foreach ($patterns as $pattern_name => $pattern) {
-                if (preg_match($pattern, $line, $matches)) {
-                    logMessage('INFO', "PATRÓN {$pattern_name} COINCIDE en línea {$line_number}");
-                    logMessage('INFO', "Matches: " . json_encode($matches));
-                    
-                    // Mapear los matches según el patrón
-                    if ($pattern_name === 'original') {
-                        $extracted_row = [
-                            'ship_date' => $this->parseDate($matches[5]),
-                            'location' => $matches[2],
-                            'ticket_number' => $matches[6],
-                            'haul_rate' => floatval($matches[9]),
-                            'quantity' => floatval($matches[10]),
-                            'amount' => floatval($matches[12]),
-                            'vehicle_number' => $matches[8],
-                            'source_row' => $line_number + 1,
-                            'source_line' => $line,
-                            'confidence' => 0.95
-                        ];
-                    } elseif ($pattern_name === 'alt1') {
-                        $extracted_row = [
-                            'ship_date' => $this->parseDate($matches[4]),
-                            'location' => $matches[1],
-                            'ticket_number' => $matches[5],
-                            'haul_rate' => floatval($matches[8]),
-                            'quantity' => floatval($matches[9]),
-                            'amount' => floatval($matches[11]),
-                            'vehicle_number' => $matches[7],
-                            'source_row' => $line_number + 1,
-                            'source_line' => $line,
-                            'confidence' => 0.85
-                        ];
-                    } elseif ($pattern_name === 'tabs') {
-                        $extracted_row = [
-                            'ship_date' => $this->parseDate($matches[3]),
-                            'location' => $matches[1],
-                            'ticket_number' => $matches[4],
-                            'haul_rate' => floatval($matches[6]),
-                            'quantity' => floatval($matches[7]),
-                            'amount' => floatval($matches[9]),
-                            'vehicle_number' => $matches[12],
-                            'source_row' => $line_number + 1,
-                            'source_line' => $line,
-                            'confidence' => 0.80
-                        ];
-                    } elseif ($pattern_name === 'flexible') {
-                        $extracted_row = [
-                            'ship_date' => $this->parseDate($matches[3]),
-                            'location' => $matches[1],
-                            'ticket_number' => $matches[4],
-                            'haul_rate' => floatval($matches[6]),
-                            'quantity' => floatval($matches[7]),
-                            'amount' => floatval($matches[12] ?? 0),    // Validación añadida
-                            'vehicle_number' => $matches[5],
-                            'source_row' => $line_number + 1,
-                            'source_line' => $line,
-                            'confidence' => 0.70
-                        ];
-                    }
-                    
-                    // Agregar company_identifier si existe
-                    if (isset($extracted_row['vehicle_number']) && strlen($extracted_row['vehicle_number']) >= 6) {
-                        $extracted_row['company_identifier'] = substr($extracted_row['vehicle_number'], 3, 3);
-                    }
-                    
-                    $extracted_data[] = $extracted_row;
-                    logMessage('INFO', "EXTRAÍDO CON {$pattern_name}: Location={$extracted_row['location']}, Vehicle={$extracted_row['vehicle_number']}, Amount={$extracted_row['amount']}");
-                    
-                    break; // Solo usar el primer patrón que coincida
+            $extracted_data = [];
+            $lines = explode("\n", $text);
+            
+            logMessage('INFO', "Total líneas en PDF: " . count($lines));
+            
+            // DEBUG: Mostrar las primeras 100 líneas para identificar el formato real
+            logMessage('INFO', "=== PRIMERAS 100 LÍNEAS DEL PDF ===");
+            for ($i = 0; $i < min(100, count($lines)); $i++) {
+                $line = trim($lines[$i]);
+                if (!empty($line)) {
+                    logMessage('DEBUG', "Línea {$i}: [{$line}]");
                 }
             }
+            logMessage('INFO', "=== FIN DEBUG LÍNEAS ===");
+            
+            // Buscar líneas que contengan vehículos (RMT...)
+            logMessage('INFO', "=== BUSCANDO LÍNEAS CON VEHÍCULOS ===");
+            foreach ($lines as $line_number => $line) {
+                $line = trim($line);
+                if (empty($line)) continue;
+                
+                // Si la línea contiene RMT (vehículos), mostrarla
+                if (strpos($line, 'RMT') !== false) {
+                    logMessage('DEBUG', "LÍNEA CON VEHÍCULO {$line_number}: [{$line}]");
+                }
+            }
+            logMessage('INFO', "=== FIN BÚSQUEDA VEHÍCULOS ===");
+            
+            foreach ($lines as $line_number => $line) {
+                $line = trim($line);
+                if (empty($line)) continue;
+                
+                // Múltiples patrones para probar diferentes formatos
+                $patterns = [
+                    // Patrón original
+                    'original' => '/^(\d{2})\s+(\d{4,6})\s+([A-Z]{2})\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+([A-Z0-9]{9})\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{2})\s+([\d.]+)$/',
+                    
+                    // Patrón alternativo sin oper code
+                    'alt1' => '/(\d{4,6})\s+([A-Z]{2})\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(\d+)\s+([A-Z0-9]{9})\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{2})\s+([\d.]+)/',
+                    
+                    // Patrón más flexible con tabs
+                    'tabs' => '/(\d{4,6})\s+([A-Z]{2})\s*\t?\s*(\d{2}\/\d{2}\/\d{4})(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([A-Z]{2})\s+([\d.]+)\s+(\d+)\s*\t?\s*([A-Z0-9]{9})/',
+                    
+                    // Patrón muy flexible
+                    'flexible' => '/(\d{4,6}).*?([A-Z]{2}).*?(\d{2}\/\d{2}\/\d{4}).*?(\d{8}).*?([A-Z0-9]{9}).*?([\d.]+).*?([\d.]+).*?([\d.]+)/'
+                ];
+                
+                foreach ($patterns as $pattern_name => $pattern) {
+                    if (preg_match($pattern, $line, $matches)) {
+                        logMessage('INFO', "PATRÓN {$pattern_name} COINCIDE en línea {$line_number}");
+                        logMessage('INFO', "Matches: " . json_encode($matches));
+                        
+                        // Mapear los matches según el patrón
+                        if ($pattern_name === 'original') {
+                            $extracted_row = [
+                                'ship_date' => $this->parseDate($matches[5]),
+                                'location' => $matches[2],
+                                'ticket_number' => $matches[6],
+                                'haul_rate' => floatval($matches[9]),
+                                'quantity' => floatval($matches[10]),
+                                'amount' => floatval($matches[12]), // CORREGIDO: era $matches[8]
+                                'vehicle_number' => $matches[8], // CORREGIDO: estaba duplicado
+                                'source_row' => $line_number + 1,
+                                'source_line' => $line,
+                                'confidence' => 0.95
+                            ];
+                        } elseif ($pattern_name === 'alt1') {
+                            $extracted_row = [
+                                'ship_date' => $this->parseDate($matches[4]),
+                                'location' => $matches[1],
+                                'ticket_number' => $matches[5],
+                                'haul_rate' => floatval($matches[8]),
+                                'quantity' => floatval($matches[9]),
+                                'amount' => floatval($matches[11]),
+                                'vehicle_number' => $matches[7],
+                                'source_row' => $line_number + 1,
+                                'source_line' => $line,
+                                'confidence' => 0.85
+                            ];
+                        } elseif ($pattern_name === 'tabs') {
+                            $extracted_row = [
+                                'ship_date' => $this->parseDate($matches[3]),
+                                'location' => $matches[1],
+                                'ticket_number' => $matches[4],
+                                'haul_rate' => floatval($matches[6]),
+                                'quantity' => floatval($matches[7]),
+                                'amount' => floatval($matches[9]),
+                                'vehicle_number' => $matches[11], // CORREGIDO: era $matches[12]
+                                'source_row' => $line_number + 1,
+                                'source_line' => $line,
+                                'confidence' => 0.80
+                            ];
+                        } elseif ($pattern_name === 'flexible') {
+                            $extracted_row = [
+                                'ship_date' => $this->parseDate($matches[3]),
+                                'location' => $matches[1],
+                                'ticket_number' => $matches[4],
+                                'haul_rate' => floatval(isset($matches[6]) ? $matches[6] : 0),
+                                'quantity' => floatval(isset($matches[7]) ? $matches[7] : 0),
+                                'amount' => floatval(isset($matches[8]) ? $matches[8] : 0),
+                                'vehicle_number' => $matches[5],
+                                'source_row' => $line_number + 1,
+                                'source_line' => $line,
+                                'confidence' => 0.70
+                            ];
+                        }
+                        
+                        // LOGGING MEJORADO: Agregar company_identifier con diagnóstico completo
+                        if (isset($extracted_row['vehicle_number']) && strlen($extracted_row['vehicle_number']) >= 6) {
+                            $extracted_row['company_identifier'] = substr($extracted_row['vehicle_number'], 3, 3);
+                            
+                            logMessage('DEBUG', "=== COMPANY IDENTIFIER EXTRAÍDO ===");
+                            logMessage('DEBUG', "Vehicle Number: '{$extracted_row['vehicle_number']}'");
+                            logMessage('DEBUG', "Company Identifier: '{$extracted_row['company_identifier']}'");
+                            logMessage('DEBUG', "Proceso: substr('{$extracted_row['vehicle_number']}', 3, 3) = '{$extracted_row['company_identifier']}'");
+                            
+                            // Verificar si la empresa existe en BD
+                            $company_exists = $this->db->selectOne(
+                                "SELECT id, name FROM companies WHERE identifier = ? AND is_active = 1",
+                                [$extracted_row['company_identifier']]
+                            );
+                            
+                            if ($company_exists) {
+                                logMessage('DEBUG', "✓ Empresa EXISTE en BD: ID={$company_exists['id']}, Name='{$company_exists['name']}'");
+                            } else {
+                                logMessage('DEBUG', "✗ Empresa NO existe en BD - Se creará automáticamente");
+                            }
+                            logMessage('DEBUG', "=== FIN COMPANY IDENTIFIER ===");
+                        } else {
+                            $vehicle_display = isset($extracted_row['vehicle_number']) ? $extracted_row['vehicle_number'] : 'NULL';
+                            logMessage('DEBUG', "✗ Vehicle number inválido para extraer company_identifier: '{$vehicle_display}'");
+                        }
+                        
+                        $extracted_data[] = $extracted_row;
+                        logMessage('INFO', "EXTRAÍDO CON {$pattern_name}: Location={$extracted_row['location']}, Vehicle={$extracted_row['vehicle_number']}, Amount={$extracted_row['amount']}");
+                        
+                        break; // Solo usar el primer patrón que coincida
+                    }
+                }
+            }
+            
+            // RESUMEN COMPLETO DE EXTRACCIÓN
+            logMessage('INFO', "=== RESUMEN DE EXTRACCIÓN ===");
+            logMessage('INFO', "Total registros extraídos: " . count($extracted_data));
+
+            // Agrupar por company_identifier
+            $companies_summary = [];
+            foreach ($extracted_data as $row) {
+                if (isset($row['company_identifier'])) {
+                    $companies_summary[$row['company_identifier']] = (isset($companies_summary[$row['company_identifier']]) ? $companies_summary[$row['company_identifier']] : 0) + 1;
+                }
+            }
+
+            logMessage('INFO', "Empresas encontradas:");
+            foreach ($companies_summary as $identifier => $count) {
+                logMessage('INFO', "  - {$identifier}: {$count} registros");
+            }
+
+            // Verificar qué empresas existen en BD
+            logMessage('INFO', "=== VERIFICACIÓN EN BASE DE DATOS ===");
+            $existing_companies = $this->db->select("SELECT identifier, name FROM companies WHERE is_active = 1 ORDER BY identifier");
+            logMessage('INFO', "Empresas existentes en BD:");
+            foreach ($existing_companies as $company) {
+                logMessage('INFO', "  - '{$company['identifier']}': {$company['name']}");
+            }
+
+            $companies_to_create = array_diff(array_keys($companies_summary), array_column($existing_companies, 'identifier'));
+            if (!empty($companies_to_create)) {
+                logMessage('INFO', "Empresas que se crearán automáticamente: " . implode(', ', $companies_to_create));
+            } else {
+                logMessage('INFO', "Todas las empresas ya existen en la BD");
+            }
+
+            logMessage('INFO', "=== FIN RESUMEN ===");
+            
+            logMessage('INFO', "=== FIN extractFromPDF - Extraídos " . count($extracted_data) . " registros ===");
+            
+            return $extracted_data;
+            
+        } catch (Exception $e) {
+            logMessage('ERROR', "Error en extractFromPDF: " . $e->getMessage());
+            throw $e;
         }
-        
-        logMessage('INFO', "=== FIN extractFromPDF - Extraídos " . count($extracted_data) . " registros ===");
-        
-        return $extracted_data;
-        
-    } catch (Exception $e) {
-        logMessage('ERROR', "Error en extractFromPDF: " . $e->getMessage());
-        throw $e;
     }
-}
     
     /**
      * Extraer datos desde Excel Martin Marieta
@@ -366,13 +421,13 @@ class MartinMarietaProcessor {
             // Validar que la fila tenga datos mínimos requeridos
             if (!empty($row_data['vehicle_number']) && !empty($row_data['amount'])) {
                 $extracted_row = [
-                    'ship_date' => $this->parseDate($row_data['ship_date'] ?? ''),
-                    'location' => trim($row_data['location'] ?? ''),
-                    'ticket_number' => trim($row_data['ticket_number'] ?? ''),
-                    'haul_rate' => floatval($row_data['haul_rate'] ?? 0),
-                    'quantity' => floatval($row_data['quantity'] ?? 0),
-                    'amount' => floatval($row_data['amount'] ?? 0),
-                    'vehicle_number' => trim($row_data['vehicle_number'] ?? ''),
+                    'ship_date' => $this->parseDate(isset($row_data['ship_date']) ? $row_data['ship_date'] : ''),
+                    'location' => trim(isset($row_data['location']) ? $row_data['location'] : ''),
+                    'ticket_number' => trim(isset($row_data['ticket_number']) ? $row_data['ticket_number'] : ''),
+                    'haul_rate' => floatval(isset($row_data['haul_rate']) ? $row_data['haul_rate'] : 0),
+                    'quantity' => floatval(isset($row_data['quantity']) ? $row_data['quantity'] : 0),
+                    'amount' => floatval(isset($row_data['amount']) ? $row_data['amount'] : 0),
+                    'vehicle_number' => trim(isset($row_data['vehicle_number']) ? $row_data['vehicle_number'] : ''),
                     'source_row' => $row,
                     'confidence' => 0.90
                 ];
@@ -447,7 +502,7 @@ class MartinMarietaProcessor {
         $filtered_data = [];
         
         foreach ($raw_data as $row) {
-            $company_identifier = $row['company_identifier'] ?? '';
+            $company_identifier = isset($row['company_identifier']) ? $row['company_identifier'] : '';
             
             if (!empty($company_identifier) && in_array($company_identifier, $this->selected_companies)) {
                 $filtered_data[] = $row;
@@ -477,7 +532,8 @@ class MartinMarietaProcessor {
             // Verificar company_identifier antes de usarlo
             if (!isset($row_data['company_identifier']) || empty($row_data['company_identifier'])) {
                 $skipped_count++;
-                logMessage('DEBUG', "Registro sin company_identifier válido, saltando - Vehicle: " . ($row_data['vehicle_number'] ?? 'N/A'));
+                $vehicle_display = isset($row_data['vehicle_number']) ? $row_data['vehicle_number'] : 'N/A';
+                logMessage('DEBUG', "Registro sin company_identifier válido, saltando - Vehicle: {$vehicle_display}");
                 continue;
             }
             
@@ -533,15 +589,15 @@ class MartinMarietaProcessor {
                 $trip_data = [
                     'voucher_id' => $this->voucher_id,
                     'company_id' => $company['id'],
-                    'trip_date' => $row_data['ship_date'] ?? null,
-                    'location' => $row_data['location'] ?? '',
-                    'ticket_number' => $row_data['ticket_number'] ?? '',
-                    'haul_rate' => floatval($row_data['haul_rate'] ?? 0),
-                    'quantity' => floatval($row_data['quantity'] ?? 0),
-                    'amount' => floatval($row_data['amount'] ?? 0),
-                    'vehicle_number' => $row_data['vehicle_number'] ?? '',
-                    'source_row_number' => intval($row_data['source_row'] ?? 0),
-                    'extraction_confidence' => floatval($row_data['confidence'] ?? 0.0)
+                    'trip_date' => isset($row_data['ship_date']) ? $row_data['ship_date'] : null,
+                    'location' => isset($row_data['location']) ? $row_data['location'] : '',
+                    'ticket_number' => isset($row_data['ticket_number']) ? $row_data['ticket_number'] : '',
+                    'haul_rate' => floatval(isset($row_data['haul_rate']) ? $row_data['haul_rate'] : 0),
+                    'quantity' => floatval(isset($row_data['quantity']) ? $row_data['quantity'] : 0),
+                    'amount' => floatval(isset($row_data['amount']) ? $row_data['amount'] : 0),
+                    'vehicle_number' => isset($row_data['vehicle_number']) ? $row_data['vehicle_number'] : '',
+                    'source_row_number' => intval(isset($row_data['source_row']) ? $row_data['source_row'] : 0),
+                    'extraction_confidence' => floatval(isset($row_data['confidence']) ? $row_data['confidence'] : 0.0)
                 ];
                 
                 $trip_id = $this->db->insert('trips', $trip_data);
@@ -594,7 +650,7 @@ class MartinMarietaProcessor {
             'CAP' => 'Capital Partners'
         ];
         
-        return $company_names[$identifier] ?? ($identifier . ' Transport LLC');
+        return isset($company_names[$identifier]) ? $company_names[$identifier] : ($identifier . ' Transport LLC');
     }
     
     /**
@@ -632,7 +688,7 @@ class MartinMarietaProcessor {
         $companies = [];
         
         foreach ($raw_data as $row) {
-            $company_identifier = $row['company_identifier'] ?? '';
+            $company_identifier = isset($row['company_identifier']) ? $row['company_identifier'] : '';
             if (!empty($company_identifier) && !in_array($company_identifier, $companies)) {
                 $companies[] = $company_identifier;
             }
