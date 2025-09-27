@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['voucher_file'])) {
         
         // Calcular hash del archivo
         $fileHash = hash_file('sha256', $uploadPath);
-        
+        /*
         // Verificar si ya existe un archivo con el mismo hash
         $existingVoucher = $db->selectOne(
             "SELECT id, voucher_number, original_filename FROM vouchers WHERE file_hash = ?",
@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['voucher_file'])) {
             unlink($uploadPath);
             throw new Exception("Este archivo ya fue procesado anteriormente como voucher: " . $existingVoucher['voucher_number']);
         }
-        
+        */
         // Generar número de voucher único
         $voucherNumber = 'V' . date('YmdHis') . substr(md5(uniqid()), 0, 4);
         
