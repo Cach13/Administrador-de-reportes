@@ -62,20 +62,19 @@ try {
     }
     
     // Obtener trips de la empresa en este voucher
-    // Obtener trips de la empresa en este voucher - VERSIÓN ROBUSTA
-$trips_data = $db->select(
-    "SELECT t.*, 
-            COALESCE(c.name, 'Empresa Desconocida') as company_name, 
-            COALESCE(c.identifier, 'N/A') as company_identifier
-     FROM trips t
-     LEFT JOIN companies c ON t.company_id = c.id
-     WHERE t.voucher_id = ? AND (t.company_id = ? OR t.company_id IS NULL)
-     ORDER BY t.trip_date ASC, t.location ASC, t.id ASC",
-    [$voucher_id, $company_id]
-);
+    $trips_data = $db->select(
+        "SELECT t.*, 
+                COALESCE(c.name, 'Empresa Desconocida') as company_name, 
+                COALESCE(c.identifier, 'N/A') as company_identifier
+         FROM trips t
+         LEFT JOIN companies c ON t.company_id = c.id
+         WHERE t.voucher_id = ? AND (t.company_id = ? OR t.company_id IS NULL)
+         ORDER BY t.trip_date ASC, t.location ASC, t.id ASC",
+        [$voucher_id, $company_id]
+    );
 
-// DEBUG: Log la consulta
-logMessage('DEBUG', "Consulta trips - voucher_id: {$voucher_id}, company_id: {$company_id}, resultados: " . count($trips_data));
+    // DEBUG: Log la consulta
+    logMessage('DEBUG', "Consulta trips - voucher_id: {$voucher_id}, company_id: {$company_id}, resultados: " . count($trips_data));
     
     if (empty($trips_data)) {
         throw new Exception("No se encontraron datos para esta empresa en el voucher seleccionado");
@@ -242,75 +241,195 @@ function generatePDFReport($data) {
 }
 
 /**
- * Función para generar HTML del reporte optimizado para PDF
+ * Función para generar HTML del reporte optimizado para PDF - FORMATO CORRECTO
  */
 function generateReportHTMLForPDF($data) {
     ob_start();
     ?>
     <style>
-        body { font-family: helvetica, sans-serif; margin: 0; padding: 20px; font-size: 10pt; }
-        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 15px; }
-        .company-name { font-size: 16pt; font-weight: bold; margin-bottom: 5px; }
-        .report-title { font-size: 14pt; color: #333; }
-        .payment-info { margin: 20px 0; }
-        .info-grid { display: table; width: 100%; }
-        .info-row { display: table-row; }
-        .info-label { display: table-cell; width: 30%; font-weight: bold; padding: 3px 0; }
-        .info-value { display: table-cell; padding: 3px 0; }
-        .trips-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        .trips-table th, .trips-table td { 
-            border: 1px solid #000; 
-            padding: 6px 4px; 
-            text-align: left; 
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 15px; 
+            font-size: 10pt; 
+            color: #000;
+        }
+        
+        .header { 
+            text-align: center; 
+            margin-bottom: 25px;
+        }
+        
+        .company-title { 
+            font-size: 14pt; 
+            font-weight: bold; 
+            margin-bottom: 3px;
+            color: #000;
+        }
+        
+        .report-title { 
+            font-size: 12pt; 
+            font-weight: normal;
+            margin-bottom: 15px;
+            color: #8A8A8A;
+        }
+        
+        .client-name {
+            font-size: 11pt;
+            font-weight: bold;
+            text-align: left;
+            margin-bottom: 15px;
+            color: #000;
+        }
+        
+        .payment-info { 
+            margin: 15px 0;
+            font-size: 10pt;
+        }
+        
+        .info-row { 
+            margin: 4px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            display: inline-block;
+            width: 120px;
+        }
+        
+        .info-value {
+            display: inline-block;
+        }
+        
+        .trips-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 15px 0;
             font-size: 9pt;
         }
+        
         .trips-table th { 
-            background-color: #f0f0f0; 
+            border: 1px solid #FFFFFF; 
+            padding: 6px 4px; 
+            background-color: #000000;
+            color: #FFFFFF;
             font-weight: bold; 
             text-align: center;
+            font-size: 8pt;
         }
-        .amount-cell { text-align: right; }
-        .totals { margin-top: 30px; text-align: right; border-top: 2px solid #000; padding-top: 15px; }
-        .total-row { margin: 8px 0; font-size: 11pt; }
-        .final-total { font-weight: bold; font-size: 14pt; border-top: 1px solid #000; padding-top: 8px; }
-        .footer { margin-top: 40px; font-size: 8pt; color: #666; text-align: center; }
+        
+        .trips-table td { 
+            border: 1px solid #FFFFFF; 
+            padding: 4px 3px; 
+            text-align: left;
+            font-size: 8pt;
+        }
+        
+        .trips-table tr:nth-child(even) { 
+            background-color: #A5A5A5;
+        }
+        
+        .trips-table tr:nth-child(odd) { 
+            background-color: #D8D8D8;
+        }
+        
+        .amount-cell { 
+            text-align: right !important;
+        }
+        
+        .date-cell {
+            text-align: center;
+        }
+        
+        .totals { 
+            margin-top: 20px; 
+            text-align: right;
+        }
+        
+        .total-row { 
+            margin: 5px 0; 
+            font-size: 10pt;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+        }
+        
+        .total-label {
+            margin-right: 20px;
+            font-weight: bold;
+        }
+        
+        .total-value {
+            font-weight: bold;
+            min-width: 80px;
+            text-align: right;
+        }
+        
+        .final-total { 
+            font-weight: bold; 
+            font-size: 12pt;
+            margin-top: 8px;
+        }
+        
+        .footer { 
+            margin-top: 30px; 
+            font-size: 7pt; 
+            color: #666; 
+            text-align: center;
+        }
+        
+        .thank-you {
+            font-style: italic;
+            font-size: 10pt;
+            text-align: right;
+            margin-top: 15px;
+            color: #000;
+        }
+        
+        .legal-notice {
+            margin-top: 25px;
+            font-size: 8pt;
+            color: #000;
+            line-height: 1.4;
+            text-align: justify;
+            border-top: 1px solid #E0E0E0;
+            padding-top: 15px;
+        }
     </style>
     
     <div class="header">
-        <div class="company-name">CAPITAL TRANSPORT LLP</div>
+        <div class="company-title">CAPITAL TRANSPORT LLP</div>
         <div class="report-title">PAYMENT INFORMATION</div>
     </div>
     
+    <div class="client-name"><?php echo strtoupper($data['company_info']['name']); ?></div>
+    
     <div class="payment-info">
-        <h3 style="margin-bottom: 15px; color: #000; border-bottom: 1px solid #ccc; padding-bottom: 5px;">
-            <?php echo strtoupper($data['company_info']['name']); ?>
-        </h3>
-        
-        <div class="info-grid">
-            <div class="info-row">
-                <div class="info-label">Payment No:</div>
-                <div class="info-value"><?php echo $data['payment_no']; ?></div>
-            </div>
-            <div class="info-row">
-                <div class="info-label">Week Start:</div>
-                <div class="info-value"><?php echo date('m/d/Y', strtotime($data['week_start'])); ?></div>
-            </div>
-            <div class="info-row">
-                <div class="info-label">Week End:</div>
-                <div class="info-value"><?php echo date('m/d/Y', strtotime($data['week_end'])); ?></div>
-            </div>
-            <div class="info-row">
-                <div class="info-label">Payment Date:</div>
-                <div class="info-value"><?php echo date('m/d/Y', strtotime($data['payment_date'])); ?></div>
-            </div>
-            <div class="info-row">
-                <div class="info-label">Payment Total:</div>
-                <div class="info-value"><strong>$<?php echo number_format($data['total_payment'], 2); ?></strong></div>
-            </div>
-            <div class="info-row">
-                <div class="info-label">YTD:</div>
-                <div class="info-value"><strong>$<?php echo number_format($data['ytd_amount'], 2); ?></strong></div>
-            </div>
+        <div class="info-row">
+            <span class="info-label">Payment No:</span>
+            <span class="info-value"><?php echo $data['payment_no']; ?></span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Week Start:</span>
+            <span class="info-value"><?php echo date('m/d/Y', strtotime($data['week_start'])); ?></span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Week End:</span>
+            <span class="info-value"><?php echo date('m/d/Y', strtotime($data['week_end'])); ?></span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Payment Date:</span>
+            <span class="info-value"><?php echo date('m/d/Y', strtotime($data['payment_date'])); ?></span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Payment Total:</span>
+            <span class="info-value"><strong>$ <?php echo number_format($data['total_payment'], 2); ?></strong></span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">YTD:</span>
+            <span class="info-value"><strong>$ <?php echo number_format($data['ytd_amount'], 2); ?></strong></span>
         </div>
     </div>
     
@@ -329,7 +448,7 @@ function generateReportHTMLForPDF($data) {
         <tbody>
             <?php foreach ($data['trips_data'] as $trip): ?>
             <tr>
-                <td><?php echo date('m/d/Y', strtotime($trip['trip_date'])); ?></td>
+                <td class="date-cell"><?php echo date('m/d/Y', strtotime($trip['trip_date'])); ?></td>
                 <td><?php echo htmlspecialchars($trip['location']); ?></td>
                 <td><?php echo htmlspecialchars($trip['ticket_number']); ?></td>
                 <td><?php echo htmlspecialchars($trip['vehicle_number']); ?></td>
@@ -342,9 +461,18 @@ function generateReportHTMLForPDF($data) {
     </table>
     
     <div class="totals">
-        <div class="total-row">SUBTOTAL: $<?php echo number_format($data['subtotal'], 2); ?></div>
-        <div class="total-row">CAPITAL'S <?php echo $data['capital_percentage']; ?>%: $<?php echo number_format($data['capital_deduction'], 2); ?></div>
-        <div class="total-row final-total">TOTAL PAYMENT: $<?php echo number_format($data['total_payment'], 2); ?></div>
+        <div class="total-row">
+            <span class="total-label">SUBTOTAL</span>
+            <span class="total-value">$ <?php echo number_format($data['subtotal'], 2); ?></span>
+        </div>
+        <div class="total-row">
+            <span class="total-label">CAPITAL'S <?php echo $data['capital_percentage']; ?>%</span>
+            <span class="total-value">$ <?php echo number_format($data['capital_deduction'], 2); ?></span>
+        </div>
+        <div class="total-row final-total">
+            <span class="total-label">TOTAL PAYMENT</span>
+            <span class="total-value">$ <?php echo number_format($data['total_payment'], 2); ?></span>
+        </div>
     </div>
     
     <div class="footer">
@@ -938,12 +1066,12 @@ function generateReportHTMLForPDF($data) {
 <?php
         // MANEJO DE VISTA PREVIA
         if (isset($_GET['preview']) && $_GET['preview'] == '1' && $report_data) {
-            echo generateReportHTML($data);
+            echo generateReportHTML($report_data);
             exit;
         }
         
         /**
-         * Función para generar HTML del reporte (para vista previa web)
+         * Función para generar HTML del reporte (para vista previa web) - FORMATO CORRECTO
          */
         function generateReportHTML($data) {
             ob_start();
@@ -954,19 +1082,129 @@ function generateReportHTMLForPDF($data) {
                 <meta charset="UTF-8">
                 <title>Payment Report - <?php echo $data['company_info']['name']; ?></title>
                 <style>
-                    body { font-family: Arial, sans-serif; margin: 20px; background: white; }
-                    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 15px; }
-                    .company-name { font-size: 18px; font-weight: bold; }
-                    .report-title { font-size: 16px; margin: 10px 0; }
-                    .payment-info { margin: 20px 0; background: #f9f9f9; padding: 15px; border-radius: 5px; }
-                    .info-row { margin: 8px 0; }
-                    .trips-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-                    .trips-table th, .trips-table td { border: 1px solid #000; padding: 8px; text-align: left; }
-                    .trips-table th { background-color: #f0f0f0; font-weight: bold; }
-                    .amount-cell { text-align: right; }
-                    .totals { margin-top: 20px; text-align: right; border-top: 2px solid #000; padding-top: 15px; }
-                    .total-row { margin: 8px 0; }
-                    .final-total { font-weight: bold; font-size: 16px; }
+                    body { 
+                        font-family: Arial, sans-serif; 
+                        margin: 20px; 
+                        background: white; 
+                        color: #000;
+                        font-size: 12px;
+                    }
+                    
+                    .header { 
+                        text-align: center; 
+                        margin-bottom: 25px;
+                    }
+                    
+                    .company-name { 
+                        font-size: 18px; 
+                        font-weight: bold; 
+                        margin-bottom: 5px;
+                        color: #000;
+                    }
+                    
+                    .report-title { 
+                        font-size: 16px; 
+                        font-weight: normal; 
+                        margin-bottom: 15px;
+                        color: #8A8A8A;
+                    }
+                    
+                    .client-name {
+                        font-size: 14px;
+                        font-weight: bold;
+                        text-align: left;
+                        margin-bottom: 20px;
+                        color: #000;
+                    }
+                    
+                    .payment-info { 
+                        margin: 20px 0; 
+                        background: #f9f9f9; 
+                        padding: 15px; 
+                        border-radius: 5px; 
+                    }
+                    
+                    .info-row { 
+                        margin: 8px 0; 
+                        display: flex; 
+                        justify-content: space-between;
+                    }
+                    
+                    .info-label {
+                        font-weight: bold;
+                        width: 150px;
+                    }
+                    
+                    .trips-table { 
+                        width: 100%; 
+                        border-collapse: collapse; 
+                        margin: 20px 0; 
+                    }
+                    
+                    .trips-table th, .trips-table td { 
+                        border: 1px solid #FFFFFF; 
+                        padding: 8px; 
+                        text-align: left; 
+                    }
+                    
+                    .trips-table th { 
+                        background-color: #000000; 
+                        color: #FFFFFF;
+                        font-weight: bold; 
+                        text-align: center;
+                    }
+                    
+                    .trips-table tr:nth-child(even) { 
+                        background-color: #A5A5A5;
+                    }
+                    
+                    .trips-table tr:nth-child(odd) { 
+                        background-color: #D8D8D8;
+                    }
+                    
+                    .amount-cell { 
+                        text-align: right; 
+                    }
+                    
+                    .date-cell {
+                        text-align: center;
+                    }
+                    
+                    .totals { 
+                        margin-top: 20px; 
+                        text-align: right;
+                    }
+                    
+                    .total-row { 
+                        margin: 8px 0; 
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 20px;
+                    }
+                    
+                    .final-total { 
+                        font-weight: bold; 
+                        font-size: 16px; 
+                        margin-top: 8px;
+                    }
+                    
+                    .thank-you {
+                        font-style: italic;
+                        font-size: 12px;
+                        text-align: right;
+                        margin-top: 15px;
+                        color: #000;
+                    }
+                    
+                    .legal-notice {
+                        margin-top: 25px;
+                        font-size: 10px;
+                        color: #000;
+                        line-height: 1.4;
+                        text-align: justify;
+                        border-top: 1px solid #E0E0E0;
+                        padding-top: 15px;
+                    }
                 </style>
             </head>
             <body>
@@ -975,14 +1213,33 @@ function generateReportHTMLForPDF($data) {
                     <div class="report-title">PAYMENT INFORMATION</div>
                 </div>
                 
+                <div class="client-name"><?php echo strtoupper($data['company_info']['name']); ?></div>
+                
                 <div class="payment-info">
-                    <div class="info-row"><strong><?php echo strtoupper($data['company_info']['name']); ?></strong></div>
-                    <div class="info-row">Payment No: <?php echo $data['payment_no']; ?></div>
-                    <div class="info-row">Week Start: <?php echo date('m/d/Y', strtotime($data['week_start'])); ?></div>
-                    <div class="info-row">Week End: <?php echo date('m/d/Y', strtotime($data['week_end'])); ?></div>
-                    <div class="info-row">Payment Date: <?php echo date('m/d/Y', strtotime($data['payment_date'])); ?></div>
-                    <div class="info-row">Payment Total: $<?php echo number_format($data['total_payment'], 2); ?></div>
-                    <div class="info-row">YTD: $<?php echo number_format($data['ytd_amount'], 2); ?></div>
+                    <div class="info-row">
+                        <span class="info-label">Payment No:</span>
+                        <span><?php echo $data['payment_no']; ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Week Start:</span>
+                        <span><?php echo date('m/d/Y', strtotime($data['week_start'])); ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Week End:</span>
+                        <span><?php echo date('m/d/Y', strtotime($data['week_end'])); ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Payment Date:</span>
+                        <span><?php echo date('m/d/Y', strtotime($data['payment_date'])); ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Payment Total:</span>
+                        <span><strong>$ <?php echo number_format($data['total_payment'], 2); ?></strong></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">YTD:</span>
+                        <span><strong>$ <?php echo number_format($data['ytd_amount'], 2); ?></strong></span>
+                    </div>
                 </div>
                 
                 <table class="trips-table">
@@ -1000,7 +1257,7 @@ function generateReportHTMLForPDF($data) {
                     <tbody>
                         <?php foreach ($data['trips_data'] as $trip): ?>
                         <tr>
-                            <td><?php echo date('m/d/Y', strtotime($trip['trip_date'])); ?></td>
+                            <td class="date-cell"><?php echo date('m/d/Y', strtotime($trip['trip_date'])); ?></td>
                             <td><?php echo htmlspecialchars($trip['location']); ?></td>
                             <td><?php echo htmlspecialchars($trip['ticket_number']); ?></td>
                             <td><?php echo htmlspecialchars($trip['vehicle_number']); ?></td>
@@ -1013,14 +1270,24 @@ function generateReportHTMLForPDF($data) {
                 </table>
                 
                 <div class="totals">
-                    <div class="total-row">SUBTOTAL: $<?php echo number_format($data['subtotal'], 2); ?></div>
-                    <div class="total-row">CAPITAL'S <?php echo $data['capital_percentage']; ?>%: $<?php echo number_format($data['capital_deduction'], 2); ?></div>
-                    <div class="total-row final-total">TOTAL PAYMENT: $<?php echo number_format($data['total_payment'], 2); ?></div>
+                    <div class="total-row">
+                        <span>SUBTOTAL</span>
+                        <span>$ <?php echo number_format($data['subtotal'], 2); ?></span>
+                    </div>
+                    <div class="total-row">
+                        <span>CAPITAL'S <?php echo $data['capital_percentage']; ?>%</span>
+                        <span>$ <?php echo number_format($data['capital_deduction'], 2); ?></span>
+                    </div>
+                    <div class="total-row final-total">
+                        <span>TOTAL PAYMENT</span>
+                        <span>$ <?php echo number_format($data['total_payment'], 2); ?></span>
+                    </div>
                 </div>
                 
-                <div style="margin-top: 40px; font-size: 12px; color: #666; text-align: center;">
-                    <p>Generated on <?php echo date('m/d/Y H:i'); ?> by Capital Transport LLP System</p>
-                    <p>Report ID: <?php echo $data['report_id'] ?? 'Preview'; ?> | Voucher ID: <?php echo $data['voucher_info']['id']; ?></p>
+                <div class="thank-you">Thank you!</div>
+                
+                <div class="legal-notice">
+                    <p><strong>Please confirm receipt.</strong> If there is a claim, it must be within the next 72 hours, otherwise it will no longer be possible to make any adjustment. For any inquiries, please send email to <strong>info@capitaltransportllp.com</strong> or call <strong>720-319-4201</strong></p>
                 </div>
             </body>
             </html>
