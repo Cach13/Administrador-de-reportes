@@ -201,8 +201,26 @@ try {
 function generatePDFReport($data) {
     require_once '../vendor/autoload.php';
     
-    // Crear nuevo documento PDF
-    $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
+    // Crear nueva clase TCPDF personalizada para el footer
+    class CustomTCPDF extends TCPDF {
+        
+        // Eliminar header por defecto
+        public function Header() {
+            // No hacer nada - elimina cualquier header
+        }
+        
+        public function Footer() {
+            // Posición a 15mm del final
+            $this->SetY(-15);
+            // Arial italic 10
+            $this->SetFont('helvetica', 'I', 10);
+            // Footer centrado en todas las páginas
+            $this->Cell(0, 10, 'Thank you!', 0, false, 'C', 0, '', 0, false, 'T', 'M');
+        }
+    }
+    
+    // Crear nuevo documento PDF con clase personalizada
+    $pdf = new CustomTCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
     
     // Configurar información del documento
     $pdf->SetCreator('Capital Transport LLP System');
@@ -216,7 +234,7 @@ function generatePDFReport($data) {
     $pdf->SetFooterMargin(10);
     
     // Auto page breaks
-    $pdf->SetAutoPageBreak(TRUE, 15);
+    $pdf->SetAutoPageBreak(TRUE, 25); // Más espacio para el footer
     
     // Configurar fuente
     $pdf->SetFont('helvetica', '', 10);
@@ -312,7 +330,7 @@ function generateReportHTMLForPDF($data) {
         
         .trips-table th { 
             border: 1px solid #FFFFFF; 
-            padding: 6px 4px; 
+            padding: 12px 10px; 
             background-color: #000000;
             color: #FFFFFF;
             font-weight: bold; 
@@ -322,17 +340,9 @@ function generateReportHTMLForPDF($data) {
         
         .trips-table td { 
             border: 1px solid #FFFFFF; 
-            padding: 4px 3px; 
-            text-align: left;
+            padding: 10px 8px; 
+            text-align: center;
             font-size: 8pt;
-        }
-        
-        .trips-table tr:nth-child(even) { 
-            background-color: #A5A5A5;
-        }
-        
-        .trips-table tr:nth-child(odd) { 
-            background-color: #D8D8D8;
         }
         
         .amount-cell { 
@@ -383,8 +393,11 @@ function generateReportHTMLForPDF($data) {
         .thank-you {
             font-style: italic;
             font-size: 10pt;
-            text-align: right;
-            margin-top: 15px;
+            text-align: center;
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
             color: #000;
         }
         
@@ -393,9 +406,14 @@ function generateReportHTMLForPDF($data) {
             font-size: 8pt;
             color: #000;
             line-height: 1.4;
-            text-align: justify;
-            border-top: 1px solid #E0E0E0;
-            padding-top: 15px;
+            text-align: center;
+            page-break-before: always;
+            padding-top: 50px;
+        }
+        
+        .legal-notice a, .legal-notice .email {
+            color: #0462C0;
+            text-decoration: none;
         }
     </style>
     
@@ -446,15 +464,20 @@ function generateReportHTMLForPDF($data) {
             </tr>
         </thead>
         <tbody>
-            <?php foreach ($data['trips_data'] as $trip): ?>
-            <tr>
-                <td class="date-cell"><?php echo date('m/d/Y', strtotime($trip['trip_date'])); ?></td>
+            <?php 
+            $row_count = 0;
+            foreach ($data['trips_data'] as $trip): 
+                $row_count++;
+                $bg_color = ($row_count % 2 == 1) ? '#A5A5A5' : '#D8D8D8';
+            ?>
+            <tr style="background-color: <?php echo $bg_color; ?>;">
+                <td><?php echo date('m/d/Y', strtotime($trip['trip_date'])); ?></td>
                 <td><?php echo htmlspecialchars($trip['location']); ?></td>
                 <td><?php echo htmlspecialchars($trip['ticket_number']); ?></td>
                 <td><?php echo htmlspecialchars($trip['vehicle_number']); ?></td>
-                <td class="amount-cell"><?php echo number_format($trip['haul_rate'], 2); ?></td>
-                <td class="amount-cell"><?php echo number_format($trip['quantity'], 2); ?></td>
-                <td class="amount-cell"><?php echo number_format($trip['amount'], 2); ?></td>
+                <td><?php echo number_format($trip['haul_rate'], 2); ?></td>
+                <td><?php echo number_format($trip['quantity'], 2); ?></td>
+                <td><?php echo number_format($trip['amount'], 2); ?></td>
             </tr>
             <?php endforeach; ?>
         </tbody>
@@ -475,9 +498,8 @@ function generateReportHTMLForPDF($data) {
         </div>
     </div>
     
-    <div class="footer">
-        <p>Generated on <?php echo date('m/d/Y H:i'); ?> by Capital Transport LLP System</p>
-        <p>Report ID: <?php echo $data['report_id'] ?? 'Preview'; ?> | Voucher ID: <?php echo $data['voucher_info']['id']; ?></p>
+    <div class="legal-notice">
+        <p><strong>Please confirm receipt.</strong> If there is a claim, it must be within the next 72 hours, otherwise it will no longer be possible to make any adjustment. For any inquiries, please send email to <span class="email">info@capitaltransportllp.com</span> or call <strong>720-319-4201</strong></p>
     </div>
     <?php
     return ob_get_clean();
@@ -1143,7 +1165,7 @@ function generateReportHTMLForPDF($data) {
                     
                     .trips-table th, .trips-table td { 
                         border: 1px solid #FFFFFF; 
-                        padding: 8px; 
+                        padding: 10px; 
                         text-align: left; 
                     }
                     
@@ -1154,11 +1176,11 @@ function generateReportHTMLForPDF($data) {
                         text-align: center;
                     }
                     
-                    .trips-table tr:nth-child(even) { 
+                    .trips-table tbody tr:nth-child(odd) { 
                         background-color: #A5A5A5;
                     }
                     
-                    .trips-table tr:nth-child(odd) { 
+                    .trips-table tbody tr:nth-child(even) { 
                         background-color: #D8D8D8;
                     }
                     
@@ -1191,7 +1213,7 @@ function generateReportHTMLForPDF($data) {
                     .thank-you {
                         font-style: italic;
                         font-size: 12px;
-                        text-align: right;
+                        text-align: center;
                         margin-top: 15px;
                         color: #000;
                     }
@@ -1201,9 +1223,14 @@ function generateReportHTMLForPDF($data) {
                         font-size: 10px;
                         color: #000;
                         line-height: 1.4;
-                        text-align: justify;
-                        border-top: 1px solid #E0E0E0;
-                        padding-top: 15px;
+                        text-align: center;
+                        page-break-before: always;
+                        padding-top: 50px;
+                    }
+                    
+                    .legal-notice a, .legal-notice .email {
+                        color: #0462C0;
+                        text-decoration: none;
                     }
                 </style>
             </head>
@@ -1287,7 +1314,7 @@ function generateReportHTMLForPDF($data) {
                 <div class="thank-you">Thank you!</div>
                 
                 <div class="legal-notice">
-                    <p><strong>Please confirm receipt.</strong> If there is a claim, it must be within the next 72 hours, otherwise it will no longer be possible to make any adjustment. For any inquiries, please send email to <strong>info@capitaltransportllp.com</strong> or call <strong>720-319-4201</strong></p>
+                    <p><strong>Please confirm receipt.</strong> If there is a claim, it must be within the next 72 hours, otherwise it will no longer be possible to make any adjustment. For any inquiries, please send email to <span class="email">info@capitaltransportllp.com</span> or call <strong>720-319-4201</strong></p>
                 </div>
             </body>
             </html>
